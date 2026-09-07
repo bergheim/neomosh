@@ -1,6 +1,5 @@
 <p align="center">
-  <img src="logo.svg" alt="Neomosh" width="96"><br>
-  <strong>neomosh</strong>
+  <img src="logo.svg" alt="Neomosh" width="96">
 </p>
 
 Mosh: the mobile shell
