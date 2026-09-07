@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.svg" alt="Neomosh" width="96">
+</p>
+
 [![ci](https://github.com/mobile-shell/mosh/actions/workflows/ci.yml/badge.svg)](https://github.com/mobile-shell/mosh/actions/workflows/ci.yml)
 
 Mosh: the mobile shell
