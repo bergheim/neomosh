@@ -1,0 +1,3 @@
+# Preview the standalone logo gallery on the container's assigned port.
+dev:
+    python3 -m http.server "$PORT" --bind 0.0.0.0 --directory "{{justfile_directory()}}"

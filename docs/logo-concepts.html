@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:,">
+  <meta name="description" content="Nine original Neomosh logo concepts: three each from Codex, Claude, and Grok. An editable SVG identity study for a modern mobile shell.">
+  <title>neomosh — nine logo directions</title>
+  <style>
+    :root { --paper: #f1f0e9; --ink: #202923; --muted: #58645c; --line: #ceD2c6; --accent: #285b40; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: inherit; text-underline-offset: .23em; }
+    button, input { font: inherit; }
+    a:focus-visible, button:focus-visible, input:focus-visible + span { outline: 3px solid #2366be; outline-offset: 5px; }
+    .wrap { width: min(1320px, calc(100% - 96px)); margin-inline: auto; }
+    .mono { font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    .eyebrow { font-size: 11px; letter-spacing: .13em; text-transform: uppercase; line-height: 1.5; }
+    .masthead { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-block: 25px; border-bottom: 1px solid var(--line); }
+    .masthead-brand { display: flex; align-items: center; gap: 13px; }
+    .status { width: 9px; height: 9px; border-radius: 50%; background: #376a38; box-shadow: 0 0 0 4px #dce4d4; flex: none; }
+    .brand { font-size: 21px; font-weight: 700; letter-spacing: -.07em; }
+    .masthead .eyebrow { color: var(--muted); }
+    .hero { padding-block: 54px 43px; display: grid; grid-template-columns: 1.35fr 1fr; align-items: end; gap: 45px; }
+    .hero .eyebrow { color: var(--accent); margin: 0 0 15px; }
+    h1 { font-size: clamp(42px, 5.5vw, 76px); line-height: 1; letter-spacing: -.065em; font-weight: 620; margin: 0; }
+    .cursor { display: inline-block; width: .37em; height: .12em; background: #527943; margin-left: .09em; }
+    .intro { max-width: 445px; margin: 0 0 3px; color: var(--muted); font-size: 16px; line-height: 1.65; }
+    .intro strong { font-weight: 500; color: var(--ink); }
+    .brief { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 25px; }
+    .brief span { font-size: 11px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 3px; }
+    .controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px; padding-block: 17px; border-block: 1px solid var(--line); }
+    fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 0; margin: 0; border: 0; min-width: 0; }
+    legend { float: left; margin: 0 15px 0 0; padding: 8px 0; color: var(--muted); font-size: 11px; line-height: 20px; }
+    .choice { position: relative; cursor: pointer; }
+    .choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .choice span { display: block; padding: 8px 12px; border-radius: 4px; font-size: 12px; line-height: 20px; }
+    .choice input:checked + span { background: var(--ink); color: #f5f5ed; }
+    .choice:hover span { box-shadow: inset 0 0 0 1px var(--ink); }
+    .count { opacity: .65; font-size: 10px; margin-left: 4px; }
+    .collection { padding-top: 34px; }
+    .section-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 17px; }
+    h2 { font-size: 17px; margin: 0; font-weight: 600; letter-spacing: -.02em; }
+    h2 .index { font-size: 11px; color: var(--muted); margin-right: 12px; font-weight: 400; }
+    .section-heading p { margin: 0; color: var(--muted); font-size: 11px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+    .card { min-width: 0; background: #fafaf5; border: 1px solid var(--line); border-radius: 7px; overflow: clip; }
+    .canvas { background: #fafaf5; color: var(--logo-accent); min-height: 245px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 25px 15px 27px; }
+    .canvas .concept-id { position: absolute; left: 17px; top: 15px; color: #637063; font-size: 10px; letter-spacing: .06em; }
+    .mark { display: block; width: 120px; height: 120px; flex: none; }
+    .wordmark { color: #202923; font-size: 29px; line-height: 1; font-weight: 600; letter-spacing: -.07em; }
+    .proof { display: grid; grid-template-columns: 1fr 1fr; border-block: 1px solid var(--line); }
+    .proof > div { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; gap: 12px; min-height: 58px; }
+    .proof .light { color: #202923; background: #e8ecdf; }
+    .proof .dark { color: #f0f3e8; background: #202d26; }
+    .proof svg { width: 24px; height: 24px; }
+    .proof span { font-size: 9px; letter-spacing: .06em; }
+    .caption { padding: 20px; }
+    .caption-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+    h3 { margin: 0; font-size: 18px; font-weight: 580; letter-spacing: -.025em; }
+    .save { font-size: 10px; color: var(--muted); text-decoration: none; padding: 5px 0 5px 8px; white-space: nowrap; background: none; border: 0; cursor: pointer; }
+    .save:hover { text-decoration: underline; color: var(--ink); }
+    .motif { font-size: 10px; color: var(--logo-accent); margin: 8px 0 10px; letter-spacing: .08em; text-transform: uppercase; }
+    .rationale { color: #586259; font-size: 13px; line-height: 1.65; margin: 0; min-height: 65px; }
+    .notes { display: grid; grid-template-columns: 1fr 2fr; gap: 38px; margin-block: 47px 30px; border-top: 1px solid var(--line); padding-top: 25px; }
+    .notes h2 { font-size: 14px; }
+    .notes p { color: var(--muted); font-size: 12px; line-height: 1.75; margin: 0 0 10px; max-width: 750px; }
+    footer { border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-block: 20px 30px; color: var(--muted); font-size: 10px; }
+    .symbol-library { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    body:has(#author-codex:checked) .collection:not([data-author="codex"]), body:has(#author-claude:checked) .collection:not([data-author="claude"]), body:has(#author-grok:checked) .collection:not([data-author="grok"]) { display: none; }
+    body:has(#canvas-night:checked) .canvas { background: #202d26; color: #d5e9b7; }
+    body:has(#canvas-night:checked) .canvas .wordmark { color: #f0f3e8; }
+    body:has(#canvas-night:checked) .canvas .concept-id { color: #b3c0b5; }
+    body:has(#canvas-mono:checked) .canvas { color: #202923; }
+    @media (max-width: 1000px) { .wrap { width: calc(100% - 48px); } .grid { gap: 13px; } .caption { padding: 16px; } .hero { gap: 28px; } .rationale { min-height: 107px; } .proof > div { padding-inline: 11px; } }
+    @media (max-width: 760px) { .hero { grid-template-columns: 1fr; gap: 24px; padding-block: 35px; } .hero h1 { font-size: clamp(40px, 8vw, 64px); } .intro { max-width: 540px; } .grid { grid-template-columns: 1fr; gap: 20px; } .canvas { min-height: 260px; } .rationale { min-height: 0; } .notes { grid-template-columns: 1fr; gap: 14px; } .section-heading p { max-width: 70%; text-align: right; } }
+    @media (max-width: 420px) { .wrap { width: calc(100% - 32px); } .masthead { gap: 10px; } .masthead .eyebrow { font-size: 9px; max-width: 90px; text-align: right; } .choice span { padding-inline: 9px; } legend { margin-right: 8px; } .brief { gap: 6px; } .brief span { padding: 6px 8px; font-size: 10px; } .section-heading p { max-width: 60%; } }
+    @media print { .controls, .save { display: none; } .wrap { width: 100%; } .hero { padding-block: 25px; } .collection { display: block !important; break-inside: avoid; } .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .canvas { min-height: 200px; } .card { break-inside: avoid; } * { print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" class="symbol-library" aria-hidden="true"><defs><symbol id="codex-1" viewBox="0 0 128 128" fill="none"><path d="M26 96V40Q26 24 39 38L89 90Q102 104 102 88V32" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="codex-2" viewBox="0 0 128 128" fill="none"><path d="M89 25A46 46 0 1 0 108 78" stroke="currentColor" stroke-width="10" stroke-linecap="round"/><circle cx="108" cy="45" r="8" fill="currentColor"/><path d="M43 48L59 64L43 80M69 80H85" stroke="currentColor" stroke-width="8" stroke-linecap="square" stroke-linejoin="miter"/></symbol>
+<symbol id="codex-3" viewBox="0 0 128 128" fill="none"><path d="M18 26H40L71 57L40 88H18L49 57Z" fill="currentColor"/><path d="M73 31L99 57L73 83" stroke="currentColor" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/><path d="M76 103H110" stroke="currentColor" stroke-width="10"/></symbol>
+<symbol id="claude-1" viewBox="0 0 128 128" fill="none"><path d="M34 100 L34 58 Q34 32 64 32 Q94 32 94 58 L94 86 Q94 100 108 100" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="claude-2" viewBox="0 0 128 128" fill="none"><rect x="30" y="40" width="28" height="48" rx="6" fill="currentColor"/><rect x="73.5" y="43.5" width="21" height="41" rx="5" stroke="currentColor" stroke-width="7"/></symbol>
+<symbol id="claude-3" viewBox="0 0 128 128" fill="none"><path d="M18 72 L45 72 A19 19 0 0 1 83 72 L110 72" stroke="currentColor" stroke-width="12" stroke-linecap="round"/><circle cx="64" cy="93" r="8" fill="currentColor"/></symbol>
+<symbol id="grok-1" viewBox="0 0 128 128" fill="none"><path fill='currentColor' d='M22 18h24v50l38-50h22v92H84V60L46 110H22z'/></symbol>
+<symbol id="grok-2" viewBox="0 0 128 128" fill="none"><polyline points='28,32 54,64 28,96' fill='none' stroke='currentColor' stroke-width='14' stroke-linecap='round' stroke-linejoin='round'/><path fill='currentColor' d='M64 20 112 64 64 108 64 82 92 64 64 46z'/></symbol>
+<symbol id="grok-3" viewBox="0 0 128 128" fill="none"><path d='M96 54V44A20 20 0 0 0 76 24H52A20 20 0 0 0 32 44v40a20 20 0 0 0 20 20h24a20 20 0 0 0 20-20v-10' stroke='currentColor' stroke-width='12' stroke-linecap='round'/><rect x='90' y='50' width='18' height='28' rx='4' fill='currentColor'/></symbol>
+</defs></svg>
+  <div class="wrap">
+    <header class="masthead">
+      <div class="masthead-brand"><span class="status" aria-hidden="true"></span><span class="brand mono">neomosh</span></div>
+      <div class="eyebrow mono">Identity studies / September 2026</div>
+    </header>
+    <main>
+      <div class="hero">
+        <div>
+          <p class="eyebrow mono">One shell. Nine directions.</p>
+          <h1>Stay connected<span class="cursor" aria-hidden="true"></span></h1>
+          <div class="brief mono" aria-label="Design brief"><span>Persistent sessions</span><span>Free to roam</span><span>Instant response</span></div>
+        </div>
+        <p class="intro">A modern Mosh fork deserves a mark of its own. <strong>Three ideas each from Codex, Claude, and Grok</strong>, exploring a terminal that stays with you through every change of network.</p>
+      </div>
+      <div class="controls" role="group" aria-label="Logo comparison controls">
+        <fieldset>
+          <legend class="mono">Show</legend>
+          <label class="choice"><input id="author-all" type="radio" name="author" value="all" checked><span>All <small class="count">09</small></span></label>
+          <label class="choice"><input id="author-codex" type="radio" name="author" value="codex"><span>Codex <small class="count">03</small></span></label>
+          <label class="choice"><input id="author-claude" type="radio" name="author" value="claude"><span>Claude <small class="count">03</small></span></label>
+          <label class="choice"><input id="author-grok" type="radio" name="author" value="grok"><span>Grok <small class="count">03</small></span></label>
+        </fieldset>
+        <fieldset>
+          <legend class="mono">Canvas</legend>
+          <label class="choice"><input id="canvas-paper" type="radio" name="canvas" value="paper" checked><span>Color</span></label>
+          <label class="choice"><input id="canvas-mono" type="radio" name="canvas" value="mono"><span>Mono</span></label>
+          <label class="choice"><input id="canvas-night" type="radio" name="canvas" value="night"><span>Night</span></label>
+        </fieldset>
+      </div>
+      <section class="collection" data-author="codex" aria-labelledby="codex-heading"><div class="section-heading"><h2 id="codex-heading"><span class="index mono">01 /</span>Codex</h2><p class="mono">Continuity, roaming, and predictive typing.</p></div><div class="grid"><article class="card" style="--logo-accent:#155e4d">
+    <div class="canvas"><span class="concept-id mono">CODEX / 01</span><svg xmlns="http://www.w3.org/2000/svg" class="mark" viewBox="0 0 128 128" role="img" aria-label="Continuum logo by Codex"><use href="#codex-1"/></svg><span class="wordmark mono">neomosh</span></div>
+    <div class="proof"><div class="light"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Continuum at 24 pixels on light"><use href="#codex-1"/></svg><span class="mono">24 PX / LIGHT</span></div><div class="dark"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Continuum at 24 pixels on dark"><use href="#codex-1"/></svg><span class="mono">24 PX / DARK</span></div></div>
+    <div class="caption"><div class="caption-head"><h3>Continuum</h3><button class="save mono" type="button" data-symbol="codex-1" data-color="#155e4d" data-title="Continuum — Neomosh / Codex" aria-label="Save Continuum by Codex as SVG">SVG ↗</button></div><p class="motif mono">Persistent connection</p><p class="rationale">One unbroken path becomes an N. Its rounded turns suggest a connection that keeps moving through network changes without dropping the thread.</p></div>
+  </article>
+<article class="card" style="--logo-accent:#3157a5">
+    <div class="canvas"><span class="concept-id mono">CODEX / 02</span><svg xmlns="http://www.w3.org/2000/svg" class="mark" viewBox="0 0 128 128" role="img" aria-label="Roam logo by Codex"><use href="#codex-2"/></svg><span class="wordmark mono">neomosh</span></div>
+    <div class="proof"><div class="light"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Roam at 24 pixels on light"><use href="#codex-2"/></svg><span class="mono">24 PX / LIGHT</span></div><div class="dark"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Roam at 24 pixels on dark"><use href="#codex-2"/></svg><span class="mono">24 PX / DARK</span></div></div>
+    <div class="caption"><div class="caption-head"><h3>Roam</h3><button class="save mono" type="button" data-symbol="codex-2" data-color="#3157a5" data-title="Roam — Neomosh / Codex" aria-label="Save Roam by Codex as SVG">SVG ↗</button></div><p class="motif mono">A shell in motion</p><p class="rationale">An open orbit surrounds a terminal prompt; the detached node carries on around it. Your network moves, while the shell remains at the center.</p></div>
+  </article>
+<article class="card" style="--logo-accent:#a34329">
+    <div class="canvas"><span class="concept-id mono">CODEX / 03</span><svg xmlns="http://www.w3.org/2000/svg" class="mark" viewBox="0 0 128 128" role="img" aria-label="Ahead logo by Codex"><use href="#codex-3"/></svg><span class="wordmark mono">neomosh</span></div>
+    <div class="proof"><div class="light"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Ahead at 24 pixels on light"><use href="#codex-3"/></svg><span class="mono">24 PX / LIGHT</span></div><div class="dark"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Ahead at 24 pixels on dark"><use href="#codex-3"/></svg><span class="mono">24 PX / DARK</span></div></div>
+    <div class="caption"><div class="caption-head"><h3>Ahead</h3><button class="save mono" type="button" data-symbol="codex-3" data-color="#a34329" data-title="Ahead — Neomosh / Codex" aria-label="Save Ahead by Codex as SVG">SVG ↗</button></div><p class="motif mono">Predictive local echo</p><p class="rationale">A solid prompt is followed by its open echo. The two advance together above a cursor, making responsive typing the central idea.</p></div>
+  </article>
+</div></section>
+<section class="collection" data-author="claude" aria-labelledby="claude-heading"><div class="section-heading"><h2 id="claude-heading"><span class="index mono">02 /</span>Claude</h2><p class="mono">Claude Fable 5 · independent concepts</p></div><div class="grid"><article class="card" style="--logo-accent:#135e63">
+    <div class="canvas"><span class="concept-id mono">CLAUDE / 01</span><svg xmlns="http://www.w3.org/2000/svg" class="mark" viewBox="0 0 128 128" role="img" aria-label="Unbroken n logo by Claude"><use href="#claude-1"/></svg><span class="wordmark mono">neomosh</span></div>
+    <div class="proof"><div class="light"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Unbroken n at 24 pixels on light"><use href="#claude-1"/></svg><span class="mono">24 PX / LIGHT</span></div><div class="dark"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Unbroken n at 24 pixels on dark"><use href="#claude-1"/></svg><span class="mono">24 PX / DARK</span></div></div>
+    <div class="caption"><div class="caption-head"><h3>Unbroken n</h3><button class="save mono" type="button" data-symbol="claude-1" data-color="#135e63" data-title="Unbroken n — Neomosh / Claude" aria-label="Save Unbroken n by Claude as SVG">SVG ↗</button></div><p class="motif mono">continuous monogram</p><p class="rationale">A lowercase n drawn as one unlifted stroke that curves into an underscore cursor at the end: the session line never breaks, and typing carries straight through it.</p></div>
+  </article>
+<article class="card" style="--logo-accent:#34327a">
+    <div class="canvas"><span class="concept-id mono">CLAUDE / 02</span><svg xmlns="http://www.w3.org/2000/svg" class="mark" viewBox="0 0 128 128" role="img" aria-label="Local Echo logo by Claude"><use href="#claude-2"/></svg><span class="wordmark mono">neomosh</span></div>
+    <div class="proof"><div class="light"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Local Echo at 24 pixels on light"><use href="#claude-2"/></svg><span class="mono">24 PX / LIGHT</span></div><div class="dark"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Local Echo at 24 pixels on dark"><use href="#claude-2"/></svg><span class="mono">24 PX / DARK</span></div></div>
+    <div class="caption"><div class="caption-head"><h3>Local Echo</h3><button class="save mono" type="button" data-symbol="claude-2" data-color="#34327a" data-title="Local Echo — Neomosh / Claude" aria-label="Save Local Echo by Claude as SVG">SVG ↗</button></div><p class="motif mono">twin cursors</p><p class="rationale">A solid block cursor with a hollow twin ahead of it: the outline is the predicted keystroke shown instantly, the solid block the server-confirmed state catching up.</p></div>
+  </article>
+<article class="card" style="--logo-accent:#a3492a">
+    <div class="canvas"><span class="concept-id mono">CLAUDE / 03</span><svg xmlns="http://www.w3.org/2000/svg" class="mark" viewBox="0 0 128 128" role="img" aria-label="The Hop logo by Claude"><use href="#claude-3"/></svg><span class="wordmark mono">neomosh</span></div>
+    <div class="proof"><div class="light"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="The Hop at 24 pixels on light"><use href="#claude-3"/></svg><span class="mono">24 PX / LIGHT</span></div><div class="dark"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="The Hop at 24 pixels on dark"><use href="#claude-3"/></svg><span class="mono">24 PX / DARK</span></div></div>
+    <div class="caption"><div class="caption-head"><h3>The Hop</h3><button class="save mono" type="button" data-symbol="claude-3" data-color="#a3492a" data-title="The Hop — Neomosh / Claude" aria-label="Save The Hop by Claude as SVG">SVG ↗</button></div><p class="motif mono">roaming signal</p><p class="rationale">A continuous line arcs over a dropped node and lands on the same baseline: the connection changes networks mid-path without ever breaking.</p></div>
+  </article>
+</div></section>
+<section class="collection" data-author="grok" aria-labelledby="grok-heading"><div class="section-heading"><h2 id="grok-heading"><span class="index mono">03 /</span>Grok</h2><p class="mono">Grok 4.6 Build · independent concepts</p></div><div class="grid"><article class="card" style="--logo-accent:#1A3D38">
+    <div class="canvas"><span class="concept-id mono">GROK / 01</span><svg xmlns="http://www.w3.org/2000/svg" class="mark" viewBox="0 0 128 128" role="img" aria-label="Roamstem logo by Grok"><use href="#grok-1"/></svg><span class="wordmark mono">neomosh</span></div>
+    <div class="proof"><div class="light"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Roamstem at 24 pixels on light"><use href="#grok-1"/></svg><span class="mono">24 PX / LIGHT</span></div><div class="dark"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Roamstem at 24 pixels on dark"><use href="#grok-1"/></svg><span class="mono">24 PX / DARK</span></div></div>
+    <div class="caption"><div class="caption-head"><h3>Roamstem</h3><button class="save mono" type="button" data-symbol="grok-1" data-color="#1A3D38" data-title="Roamstem — Neomosh / Grok" aria-label="Save Roamstem by Grok as SVG">SVG ↗</button></div><p class="motif mono">dual-host path</p><p class="rationale">Two stems are the local and remote ends. The diagonal is the roaming session that keeps them one unbroken connection.</p></div>
+  </article>
+<article class="card" style="--logo-accent:#321E4A">
+    <div class="canvas"><span class="concept-id mono">GROK / 02</span><svg xmlns="http://www.w3.org/2000/svg" class="mark" viewBox="0 0 128 128" role="img" aria-label="Forecho logo by Grok"><use href="#grok-2"/></svg><span class="wordmark mono">neomosh</span></div>
+    <div class="proof"><div class="light"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Forecho at 24 pixels on light"><use href="#grok-2"/></svg><span class="mono">24 PX / LIGHT</span></div><div class="dark"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Forecho at 24 pixels on dark"><use href="#grok-2"/></svg><span class="mono">24 PX / DARK</span></div></div>
+    <div class="caption"><div class="caption-head"><h3>Forecho</h3><button class="save mono" type="button" data-symbol="grok-2" data-color="#321E4A" data-title="Forecho — Neomosh / Grok" aria-label="Save Forecho by Grok as SVG">SVG ↗</button></div><p class="motif mono">predictive prompt</p><p class="rationale">A stroked prompt and a solid prompt form an echo pair, translating responsive local typing into a compact mark.</p></div>
+  </article>
+<article class="card" style="--logo-accent:#1A3348">
+    <div class="canvas"><span class="concept-id mono">GROK / 03</span><svg xmlns="http://www.w3.org/2000/svg" class="mark" viewBox="0 0 128 128" role="img" aria-label="Liveframe logo by Grok"><use href="#grok-3"/></svg><span class="wordmark mono">neomosh</span></div>
+    <div class="proof"><div class="light"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Liveframe at 24 pixels on light"><use href="#grok-3"/></svg><span class="mono">24 PX / LIGHT</span></div><div class="dark"><svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 128 128" role="img" aria-label="Liveframe at 24 pixels on dark"><use href="#grok-3"/></svg><span class="mono">24 PX / DARK</span></div></div>
+    <div class="caption"><div class="caption-head"><h3>Liveframe</h3><button class="save mono" type="button" data-symbol="grok-3" data-color="#1A3348" data-title="Liveframe — Neomosh / Grok" aria-label="Save Liveframe by Grok as SVG">SVG ↗</button></div><p class="motif mono">open terminal cursor</p><p class="rationale">A terminal frame that never quite closes, held by a block cursor. The session stays alive through sleep, drop, and roaming.</p></div>
+  </article>
+</div></section>
+
+      <aside class="notes" aria-labelledby="about-heading">
+        <h2 id="about-heading">A fair comparison.</h2>
+        <div>
+          <p>Each model received the same project brief and created its own three SVG marks independently. Claude and Grok were consulted through their own CLIs. Codex assembled the gallery and lightly edited captions for clarity; all mark geometry is model-authored. The wordmark, scale, and presentation are shared. The small samples show each mark at an actual 24 pixels, in one color.</p>
+          <p>These are first-round directions, not a selected identity. Use Color, Mono, and Night to compare silhouettes, then save any mark as an editable SVG. Downloads contain the symbol in its original accent color; the shared wordmark is only a presentation aid.</p>
+        </div>
+      </aside>
+    </main>
+    <footer class="mono"><span>neomosh / The mobile shell, moving forward.</span><span>03 models · 09 concepts · SVG throughout</span></footer>
+  </div>
+  <script>
+    "use strict";
+    document.querySelectorAll(".save").forEach((button) => {
+      button.addEventListener("click", () => {
+        const symbol = document.getElementById(button.dataset.symbol);
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        svg.setAttribute("viewBox", symbol.getAttribute("viewBox"));
+        svg.setAttribute("fill", "none");
+        svg.setAttribute("color", button.dataset.color);
+        svg.setAttribute("role", "img");
+        const title = document.createElementNS(svg.namespaceURI, "title");
+        title.textContent = button.dataset.title;
+        svg.append(title, ...Array.from(symbol.children, (child) => child.cloneNode(true)));
+        const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `neomosh-${button.dataset.symbol}.svg`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      });
+    });
+  </script>
+</body>
+</html>

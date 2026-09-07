@@ -1,0 +1,10 @@
+#+title: Neomosh — project context
+
+* Purpose and audience
+Neomosh is a modern Mosh fork for developers and terminal users. Its identity should emphasize persistent connections, roaming, and responsiveness. The inherited Mosh implementation provides remote terminal sessions, predictive local echo, and recovery from intermittent connectivity.
+
+* Constraints and decisions
+The project name is Neomosh, styled as =neomosh= in logo concepts. There is no fixed palette; explore freely. The first identity study compares three SVG logo concepts each from Codex, Claude, and Grok on one HTML page. No final logo has been selected.
+
+* Context source
+The purpose, audience, and identity brief above were confirmed by the user on 2026-09-07. =README.md= still describes upstream Mosh; recent source history includes OSC 8 hyperlink support.

@@ -1,0 +1,17 @@
+#+title: Neomosh — work log
+
+* DONE Compare nine Neomosh logo concepts                            :design:
+  CLOSED: [2026-09-07 Mon 12:54]
+  :PROPERTIES:
+  :ID:       20260907T124300Z-cc2b0f
+  :CREATED:  [2026-09-07 Mon 12:43]
+  :LAST_AGENT: unknown
+  :END:
+  :LOGBOOK:
+  - State "DONE"       from "INPROGRESS" [2026-09-07 Mon 12:54] \\
+    Created docs/logo-concepts.html with three SVG marks each from Codex, Claude Fable 5, and Grok 4.6 Build. Includes model filters, Color/Mono/Night previews, 24-pixel samples, and nine standalone SVG downloads. Verified 2026-09-07: browser-check at 1440, 320, 390, and 430 pixels found no horizontal overflow; screenshots inspected in scratch/logo-gallery-desktop.png, scratch/logo-gallery-phone-320.png, and scratch/logo-gallery-night.png. Pa11y WCAG2AA passed on the actual gallery URL. Playwright verified author counts, all canvas modes, keyboard focus, and all nine downloaded SVGs as valid standalone XML; runnable check is scratch/check-logo-gallery.js. Preview recipe: just --justfile docs/justfile dev, using the assigned PORT; current local URL is http://localhost:4436/logo-concepts.html.
+- Session unknown [2026-09-07 Mon 12:54]
+  - State "INPROGRESS" from "TODO"       [2026-09-07 Mon 12:43]
+- Session unknown [2026-09-07 Mon 12:43]
+  :END:
+Create three original SVG suggestions each from Codex, Claude, and Grok using the approved project brief. Display all nine in a standalone HTML gallery with clear authorship, light/dark previews, and small-size samples. Verify desktop and phone rendering and provide a browser-viewable artifact.
