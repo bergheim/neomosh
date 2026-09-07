@@ -1,11 +1,12 @@
 <p align="center">
-  <img src="logo.svg" alt="Neomosh" width="96">
+  <img src="logo.svg" alt="Neomosh" width="96"><br>
+  <strong>neomosh</strong>
 </p>
-
-[![ci](https://github.com/mobile-shell/mosh/actions/workflows/ci.yml/badge.svg)](https://github.com/mobile-shell/mosh/actions/workflows/ci.yml)
 
 Mosh: the mobile shell
 ======================
+
+[![ci](https://github.com/mobile-shell/mosh/actions/workflows/ci.yml/badge.svg)](https://github.com/mobile-shell/mosh/actions/workflows/ci.yml)
 
 Mosh is a remote terminal application that supports intermittent
 connectivity, allows roaming, and provides speculative local echo
