@@ -60,6 +60,7 @@ class Emulator
 
   friend void Parser::UserByte::act_on_terminal( Emulator* ) const;
   friend void Parser::Resize::act_on_terminal( Emulator* ) const;
+  friend void Parser::Theme::act_on_terminal( Emulator* ) const;
 
 private:
   Framebuffer fb;
@@ -73,6 +74,7 @@ private:
   void Esc_dispatch( const Parser::Esc_Dispatch* act );
   void OSC_end( const Parser::OSC_End* act );
   void resize( size_t s_width, size_t s_height );
+  void set_theme( const std::string& foreground, const std::string& background, int scheme );
 
 public:
   Emulator( size_t s_width, size_t s_height );

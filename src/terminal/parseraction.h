@@ -170,6 +170,33 @@ public:
 
   bool operator==( const Resize& other ) const { return ( width == other.width ) && ( height == other.height ); }
 };
+
+class Theme : public Action
+{
+  /* local terminal theme event -- not part of the host-source state machine */
+public:
+  enum Scheme
+  {
+    SCHEME_UNKNOWN = 0,
+    SCHEME_DARK = 1,
+    SCHEME_LIGHT = 2
+  };
+
+  std::string foreground, background; /* XParseColor "rrrr/gggg/bbbb", empty when unknown */
+  int scheme;
+
+  std::string name( void ) { return std::string( "Theme" ); }
+  void act_on_terminal( Terminal::Emulator* emu ) const;
+
+  Theme( const std::string& s_foreground, const std::string& s_background, int s_scheme )
+    : foreground( s_foreground ), background( s_background ), scheme( s_scheme )
+  {}
+
+  bool operator==( const Theme& other ) const
+  {
+    return ( foreground == other.foreground ) && ( background == other.background ) && ( scheme == other.scheme );
+  }
+};
 }
 
 #endif

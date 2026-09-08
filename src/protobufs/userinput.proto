@@ -21,7 +21,17 @@ message ResizeMessage {
   optional int32 height = 6;
 }
 
+/* Local terminal theme: default colours in XParseColor form
+   ("rrrr/gggg/bbbb", empty when unknown) and the light/dark
+   preference (0 unknown, 1 dark, 2 light). */
+message ThemeMessage {
+  optional string foreground = 7;
+  optional string background = 8;
+  optional int32 scheme = 9;
+}
+
 extend Instruction {
   optional Keystroke keystroke = 2;
   optional ResizeMessage resize = 3;
+  optional ThemeMessage theme = 4;
 }

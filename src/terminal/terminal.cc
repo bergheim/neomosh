@@ -171,6 +171,11 @@ void Emulator::resize( size_t s_width, size_t s_height )
   fb.resize( s_width, s_height );
 }
 
+void Emulator::set_theme( const std::string& foreground, const std::string& background, int scheme )
+{
+  dispatch.set_theme( foreground, background, scheme );
+}
+
 bool Emulator::operator==( Emulator const& x ) const
 {
   /* dispatcher and user are irrelevant for us */

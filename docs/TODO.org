@@ -132,15 +132,23 @@ Independent and cheap. mosh-client wraps each Display frame it writes to the loc
 :END:
 Open upstream PRs that are small and independent, one commit each, make check after each, in this order: #1382 select include config.h (vapier), #1383 OSC 7 working directory (zedinosaur), #1405 announce lower mouse tracking modes cumulatively (kedimuzafer), #1407 MOSH_GRAB_MOUSE (18woldemar), #1365 manual DNS re-resolve command (eminence), #1361 session age in the detached sessions warning (eminence), #1144 OSC 9 and 777 notifications (rrgeorge, skip the OSC 1337 file part), #1187 unset stale SSH_TTY (ProducerMatt, on jdrouhard as 42e0893). #1384 XTVERSION moved to the capability task. Check that OSC 7 and OSC 9 do not replay on redraw or reconnect.
 
-* TODO Live light and dark theme propagation over mosh  :terminal:theme:protocol:
+* DONE Live light and dark theme propagation over mosh :terminal:theme:protocol:
+CLOSED: [2026-09-08 Tue 07:43]
 :PROPERTIES:
 :ID:       20260908T061137Z-c18732
 :CREATED:  [2026-09-08 Tue 06:11]
+:LAST_AGENT: claude/claude-fable-5-1 (high)
 :END:
 :LOGBOOK:
+- State "DONE"       from "INPROGRESS" [2026-09-08 Tue 07:43] \\
+  Client probes the local terminal (mode 2031, DSR 996, OSC 10 and 11) at start and after SIGCONT, filters the replies out of the keystroke stream with Terminal::TerminalReplyFilter (100 ms hold deadline), and ships fg, bg and scheme as a Parser::Theme user event (new optional ThemeMessage extension in userinput.proto). Server dispatcher answers OSC 10 and 11 queries, CSI ? 996 n, tracks mode 2031 and emits CSI ? 997 ; N n on a real switch. Unit tests terminal-theme and terminal-reply-filter; full make check 32 pass 2 xfail; verified end to end with a pty harness (see linked note). Static PR 1394 handoff skipped. Peer review items adopted except the automake e2e test, which is a follow-up.
+- Session claude/claude-fable-5-1 (high) 4c3bc305-f927-4673-ae6a-1a8eeef6a7dd [2026-09-08 Tue 07:43]
+- State "INPROGRESS" from "TODO"       [2026-09-08 Tue 07:16]
+- Session claude/claude-fable-5-1 (high) 4c3bc305-f927-4673-ae6a-1a8eeef6a7dd [2026-09-08 Tue 07:16]
 - Note taken on [2026-09-08 Tue 06:21] \\
   Peer review 2026-09-08 (codex, grok): query replies share the tty input with keystrokes and paste, so the client needs incremental demux with deadlines, handling of late or unsolicited replies, and restoration of local reporting modes. Track remote mode 2031 enable and reset separately. Verify which terminals send DSR 997: grok claims kitty and foot do not, only Contour and Ghostty; if so add an OSC 11 re-query fallback. Test must read the reply, printf alone proves nothing. Compatibility: define mixed-version behaviour and fallback for the new user event, we do not own stock mosh-server peers.
 :END:
+- [[denote:20260908T072137][Theme propagation: OSC 10 and 11 and mode 2031 over the user stream]]
 Goal: the local terminal theme, including a switch mid-session (Ghostty, kitty, foot, Contour), is seen by remote apps exactly as over ssh. Upstream PR #1394 (amir-jakoby) is the reference for the server-side OSC 10 and 11 answer path and its terminal-osc-default-colors regression test; its Perl -@ argv handoff is skipped, the connect-time probe is simply the first event. Pieces. One: mosh-client queries OSC 10 and 11 at startup and on change; replies share the tty input with keystrokes and paste, so parse them incrementally with a deadline, tolerate late or unsolicited replies and terminals that never answer, and restore local reporting modes on exit. Two: change notification via DEC private mode 2031 and CSI ? 997 ; 1 n (dark) or CSI ? 997 ; 2 n (light); verify which terminals actually send it (grok claims only Contour and Ghostty, not kitty or foot) and fall back to a periodic or focus-triggered OSC 11 re-query otherwise. Three: ship fg and bg through Network::UserStream as a new event type in src/statesync/user.* and src/protobufs/userinput.proto, alongside resize. Four: the server emulator stores live values in the framebuffer, answers OSC 10 and 11 ? queries from them, tracks remote mode 2031 enable and reset separately, and re-emits CSI ? 997 n to remote apps that enabled it. Wire change is covered by the both-ends-neomosh decision in PROJECT.org and the version handshake task. Test: e2e with a fake terminal that answers OSC 11, flip the answer mid-session, a remote query must read back the new value and a remote app with 2031 enabled must receive the notification.
 
 * CANCELLED Static OSC 10 and 11 default colour queries  :upstream:terminal:theme:

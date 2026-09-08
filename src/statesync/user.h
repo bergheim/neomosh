@@ -44,7 +44,8 @@ namespace Network {
 enum UserEventType
 {
   UserByteType = 0,
-  ResizeType = 1
+  ResizeType = 1,
+  ThemeType = 2
 };
 
 class UserEvent
@@ -53,10 +54,15 @@ public:
   UserEventType type;
   Parser::UserByte userbyte;
   Parser::Resize resize;
+  Parser::Theme theme;
 
-  UserEvent( const Parser::UserByte& s_userbyte ) : type( UserByteType ), userbyte( s_userbyte ), resize( -1, -1 )
+  UserEvent( const Parser::UserByte& s_userbyte )
+    : type( UserByteType ), userbyte( s_userbyte ), resize( -1, -1 ), theme( "", "", 0 )
   {}
-  UserEvent( const Parser::Resize& s_resize ) : type( ResizeType ), userbyte( 0 ), resize( s_resize ) {}
+  UserEvent( const Parser::Resize& s_resize )
+    : type( ResizeType ), userbyte( 0 ), resize( s_resize ), theme( "", "", 0 )
+  {}
+  UserEvent( const Parser::Theme& s_theme ) : type( ThemeType ), userbyte( 0 ), resize( -1, -1 ), theme( s_theme ) {}
 
 private:
   UserEvent();
@@ -64,7 +70,7 @@ private:
 public:
   bool operator==( const UserEvent& x ) const
   {
-    return ( type == x.type ) && ( userbyte == x.userbyte ) && ( resize == x.resize );
+    return ( type == x.type ) && ( userbyte == x.userbyte ) && ( resize == x.resize ) && ( theme == x.theme );
   }
 };
 
@@ -78,6 +84,7 @@ public:
 
   void push_back( const Parser::UserByte& s_userbyte ) { actions.push_back( UserEvent( s_userbyte ) ); }
   void push_back( const Parser::Resize& s_resize ) { actions.push_back( UserEvent( s_resize ) ); }
+  void push_back( const Parser::Theme& s_theme ) { actions.push_back( UserEvent( s_theme ) ); }
 
   bool empty( void ) const { return actions.empty(); }
   size_t size( void ) const { return actions.size(); }

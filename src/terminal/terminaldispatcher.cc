@@ -45,8 +45,24 @@ using namespace Terminal;
 static const size_t MAXIMUM_CLIPBOARD_SIZE = 16 * 1024;
 
 Dispatcher::Dispatcher()
-  : params(), parsed_params(), parsed( false ), dispatch_chars(), OSC_string(), terminal_to_host()
+  : params(), parsed_params(), parsed( false ), dispatch_chars(), OSC_string(), terminal_to_host(),
+    theme_foreground(), theme_background(), theme_scheme( 0 ), color_scheme_notify( false )
 {}
+
+void Dispatcher::set_theme( const std::string& foreground, const std::string& background, int scheme )
+{
+  int previous_scheme = theme_scheme;
+
+  theme_foreground = foreground;
+  theme_background = background;
+  theme_scheme = scheme;
+
+  if ( color_scheme_notify && scheme != Parser::Theme::SCHEME_UNKNOWN && scheme != previous_scheme ) {
+    char notify[16];
+    snprintf( notify, sizeof( notify ), "\033[?997;%dn", scheme == Parser::Theme::SCHEME_DARK ? 1 : 2 );
+    terminal_to_host.append( notify );
+  }
+}
 
 void Dispatcher::newparamchar( const Parser::Param* act )
 {

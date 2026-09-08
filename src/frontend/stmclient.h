@@ -33,6 +33,7 @@
 #ifndef STM_CLIENT_HPP
 #define STM_CLIENT_HPP
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -40,6 +41,7 @@
 #include <termios.h>
 
 #include "src/frontend/terminaloverlay.h"
+#include "src/terminal/terminalreply.h"
 #include "src/network/networktransport.h"
 #include "src/statesync/completeterminal.h"
 #include "src/statesync/user.h"
@@ -73,10 +75,31 @@ private:
   bool clean_shutdown;
   unsigned int verbose;
 
+  /* Local terminal theme discovery: filters the server-bound reply to our
+     theme probe out of the keystroke stream, and remembers the last-known
+     colours/scheme so we can report a complete Parser::Theme each time one
+     of the three changes. */
+  Terminal::TerminalReplyFilter reply_filter;
+  std::string theme_fg, theme_bg;
+  int theme_scheme;
+  Parser::Theme last_sent_theme;
+  uint64_t pending_reply_deadline; /* 0 when nothing is held by reply_filter */
+
+  /* Outcome of feeding one keystroke byte through the escape-key/quit-sequence
+     state machine below. */
+  enum class InputAction
+  {
+    CONTINUE, /* keep reading more bytes */
+    STOP_OK,  /* stop; process_user_input should return true */
+    STOP_EOF  /* stop; process_user_input should return false */
+  };
+
   void main_init( void );
   void process_network_input( void );
   bool process_user_input( int fd );
   bool process_resize( void );
+  InputAction process_input_byte( char the_byte );
+  bool apply_bytes_to_keystroke_stream( const std::string& bytes, bool paste );
 
   void output_new_frame( void );
 
@@ -100,7 +123,8 @@ public:
       saved_termios(), raw_termios(), window_size(), local_framebuffer( 1, 1 ), new_state( 1, 1 ), overlays(),
       network(), display( true ) /* use TERM environment var to initialize display */, connecting_notification(),
       repaint_requested( false ), lf_entered( false ), quit_sequence_started( false ), clean_shutdown( false ),
-      verbose( s_verbose )
+      verbose( s_verbose ), reply_filter(), theme_fg(), theme_bg(), theme_scheme( 0 ), last_sent_theme( "", "", 0 ),
+      pending_reply_deadline( 0 )
   {
     if ( predict_mode ) {
       if ( !strcmp( predict_mode, "always" ) ) {

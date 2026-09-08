@@ -89,6 +89,12 @@ std::string UserStream::diff_from( const UserStream& existing ) const
         new_inst->MutableExtension( resize )->set_width( my_it->resize.width );
         new_inst->MutableExtension( resize )->set_height( my_it->resize.height );
       } break;
+      case ThemeType: {
+        Instruction* new_inst = output.add_instruction();
+        new_inst->MutableExtension( theme )->set_foreground( my_it->theme.foreground );
+        new_inst->MutableExtension( theme )->set_background( my_it->theme.background );
+        new_inst->MutableExtension( theme )->set_scheme( my_it->theme.scheme );
+      } break;
       default:
         assert( !"unexpected event type" );
         break;
@@ -114,6 +120,9 @@ void UserStream::apply_string( const std::string& diff )
     } else if ( input.instruction( i ).HasExtension( resize ) ) {
       actions.push_back( UserEvent( Resize( input.instruction( i ).GetExtension( resize ).width(),
                                             input.instruction( i ).GetExtension( resize ).height() ) ) );
+    } else if ( input.instruction( i ).HasExtension( theme ) ) {
+      const ThemeMessage& tm = input.instruction( i ).GetExtension( theme );
+      actions.push_back( UserEvent( Theme( tm.foreground(), tm.background(), tm.scheme() ) ) );
     }
   }
 }
@@ -125,6 +134,8 @@ const Parser::Action& UserStream::get_action( unsigned int i ) const
       return actions[i].userbyte;
     case ResizeType:
       return actions[i].resize;
+    case ThemeType:
+      return actions[i].theme;
     default:
       assert( !"unexpected action type" );
       static const Parser::Ignore nothing = Parser::Ignore();

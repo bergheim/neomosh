@@ -5,6 +5,8 @@
 /nonce-incr
 /inpty
 /is-utf8-locale
+/terminal-theme
+/terminal-reply-filter
 /*.d/
 *.log
 *.trs

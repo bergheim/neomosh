@@ -64,6 +64,15 @@
 
 #include "src/network/networktransport-impl.h"
 
+/* Ask the local terminal to notify us of light/dark scheme changes (mode 2031),
+   and ask once for the current scheme and default foreground/background colours.
+   The terminal replies are filtered out of the keystroke stream by reply_filter. */
+static const char* const THEME_PROBE = "\033[?2031h\033[?996n\033]10;?\033\\\033]11;?\033\\";
+
+/* Just the colour half of the probe above -- resent whenever the scheme changes,
+   so the default colours we report follow suit. */
+static const char* const THEME_COLOR_QUERY = "\033]10;?\033\\\033]11;?\033\\";
+
 void STMClient::resume( void )
 {
   /* Restore termios state */
@@ -74,6 +83,9 @@ void STMClient::resume( void )
 
   /* Put terminal in application-cursor-key mode */
   swrite( STDOUT_FILENO, display.open().c_str() );
+
+  /* Re-arm theme notifications and re-query the current theme */
+  swrite( STDOUT_FILENO, THEME_PROBE );
 
   /* Flag that outer terminal state is unknown */
   repaint_requested = true;
@@ -121,6 +133,10 @@ void STMClient::init( void )
 
   /* Put terminal in application-cursor-key mode */
   swrite( STDOUT_FILENO, display.open().c_str() );
+
+  /* Ask the local terminal for its light/dark scheme and default colours,
+     and ask it to keep us posted on scheme changes. */
+  swrite( STDOUT_FILENO, THEME_PROBE );
 
   /* Add our name to window title */
   if ( !getenv( "MOSH_TITLE_NOPREFIX" ) ) {
@@ -307,6 +323,95 @@ void STMClient::process_network_input( void )
     network->get_latest_remote_state().state.get_echo_ack() );
 }
 
+STMClient::InputAction STMClient::process_input_byte( char the_byte )
+{
+  NetworkType& net = *network;
+
+  if ( quit_sequence_started ) {
+    if ( the_byte == '.' ) { /* Quit sequence is Ctrl-^ . */
+      if ( net.has_remote_addr() && ( !net.shutdown_in_progress() ) ) {
+        overlays.get_notification_engine().set_notification_string( std::wstring( L"Exiting on user request..." ),
+                                                                    true );
+        net.start_shutdown();
+        return InputAction::STOP_OK;
+      }
+      return InputAction::STOP_EOF;
+    } else if ( the_byte == 0x1a ) { /* Suspend sequence is escape_key Ctrl-Z */
+      /* Restore terminal and terminal-driver state */
+      swrite( STDOUT_FILENO, display.close().c_str() );
+
+      if ( tcsetattr( STDIN_FILENO, TCSANOW, &saved_termios ) < 0 ) {
+        perror( "tcsetattr" );
+        exit( 1 );
+      }
+
+      fputs( "\n\033[37;44m[mosh is suspended.]\033[m\n", stdout );
+
+      fflush( NULL );
+
+      /* actually suspend */
+      kill( 0, SIGSTOP );
+
+      resume();
+    } else if ( ( the_byte == escape_pass_key ) || ( the_byte == escape_pass_key2 ) ) {
+      /* Emulation sequence to type escape_key is escape_key +
+         escape_pass_key (that is escape key without Ctrl) */
+      net.get_current_state().push_back( Parser::UserByte( escape_key ) );
+    } else {
+      /* Escape key followed by anything other than . and ^ gets sent literally */
+      net.get_current_state().push_back( Parser::UserByte( escape_key ) );
+      net.get_current_state().push_back( Parser::UserByte( the_byte ) );
+    }
+
+    quit_sequence_started = false;
+
+    if ( overlays.get_notification_engine().get_notification_string() == escape_key_help ) {
+      overlays.get_notification_engine().set_notification_string( L"" );
+    }
+
+    return InputAction::CONTINUE;
+  }
+
+  quit_sequence_started = ( escape_key > 0 ) && ( the_byte == escape_key ) && ( lf_entered || ( !escape_requires_lf ) );
+  if ( quit_sequence_started ) {
+    lf_entered = false;
+    overlays.get_notification_engine().set_notification_string( escape_key_help, true, false );
+    return InputAction::CONTINUE;
+  }
+
+  lf_entered
+    = ( ( the_byte == 0x0A ) || ( the_byte == 0x0D ) ); /* LineFeed, Ctrl-J, '\n' or CarriageReturn, Ctrl-M, '\r' */
+
+  if ( the_byte == 0x0C ) { /* Ctrl-L */
+    repaint_requested = true;
+  }
+
+  net.get_current_state().push_back( Parser::UserByte( the_byte ) );
+
+  return InputAction::CONTINUE;
+}
+
+bool STMClient::apply_bytes_to_keystroke_stream( const std::string& bytes, bool paste )
+{
+  for ( size_t i = 0; i < bytes.size(); i++ ) {
+    char the_byte = bytes[i];
+
+    if ( !paste ) {
+      overlays.get_prediction_engine().new_user_byte( the_byte, local_framebuffer );
+    }
+
+    InputAction action = process_input_byte( the_byte );
+    if ( action == InputAction::STOP_EOF ) {
+      return false;
+    }
+    if ( action == InputAction::STOP_OK ) {
+      return true;
+    }
+  }
+
+  return true;
+}
+
 bool STMClient::process_user_input( int fd )
 {
   const int buf_size = 16384;
@@ -328,83 +433,46 @@ bool STMClient::process_user_input( int fd )
   }
   overlays.get_prediction_engine().set_local_frame_sent( net.get_sent_state_last() );
 
+  /* Filter out our own theme-probe replies before they reach the keystroke stream. */
+  std::string passthrough;
+  reply_filter.feed( std::string( buf, bytes_read ), passthrough );
+
+  std::vector<Terminal::TerminalReplyFilter::Reply> replies = reply_filter.take_replies();
+  for ( std::vector<Terminal::TerminalReplyFilter::Reply>::const_iterator it = replies.begin(); it != replies.end();
+        it++ ) {
+    switch ( it->kind ) {
+      case Terminal::TerminalReplyFilter::Reply::COLOR_SCHEME:
+        if ( theme_scheme != 0 && theme_scheme != it->scheme ) {
+          /* An actual switch: the default colours have probably changed too. */
+          swrite( STDOUT_FILENO, THEME_COLOR_QUERY );
+        }
+        theme_scheme = it->scheme;
+        break;
+      case Terminal::TerminalReplyFilter::Reply::FOREGROUND:
+        theme_fg = it->color;
+        break;
+      case Terminal::TerminalReplyFilter::Reply::BACKGROUND:
+        theme_bg = it->color;
+        break;
+    }
+  }
+  if ( !replies.empty() && !net.shutdown_in_progress() ) {
+    Parser::Theme current( theme_fg, theme_bg, theme_scheme );
+    if ( !( current == last_sent_theme ) ) {
+      net.get_current_state().push_back( current );
+      last_sent_theme = current;
+    }
+  }
+
+  pending_reply_deadline = reply_filter.has_pending() ? timestamp() + 100 : 0;
+
   /* Don't predict for bulk data. */
-  bool paste = bytes_read > 100;
+  bool paste = passthrough.size() > 100;
   if ( paste ) {
     overlays.get_prediction_engine().reset();
   }
 
-  for ( int i = 0; i < bytes_read; i++ ) {
-    char the_byte = buf[i];
-
-    if ( !paste ) {
-      overlays.get_prediction_engine().new_user_byte( the_byte, local_framebuffer );
-    }
-
-    if ( quit_sequence_started ) {
-      if ( the_byte == '.' ) { /* Quit sequence is Ctrl-^ . */
-        if ( net.has_remote_addr() && ( !net.shutdown_in_progress() ) ) {
-          overlays.get_notification_engine().set_notification_string( std::wstring( L"Exiting on user request..." ),
-                                                                      true );
-          net.start_shutdown();
-          return true;
-        }
-        return false;
-      } else if ( the_byte == 0x1a ) { /* Suspend sequence is escape_key Ctrl-Z */
-        /* Restore terminal and terminal-driver state */
-        swrite( STDOUT_FILENO, display.close().c_str() );
-
-        if ( tcsetattr( STDIN_FILENO, TCSANOW, &saved_termios ) < 0 ) {
-          perror( "tcsetattr" );
-          exit( 1 );
-        }
-
-        fputs( "\n\033[37;44m[mosh is suspended.]\033[m\n", stdout );
-
-        fflush( NULL );
-
-        /* actually suspend */
-        kill( 0, SIGSTOP );
-
-        resume();
-      } else if ( ( the_byte == escape_pass_key ) || ( the_byte == escape_pass_key2 ) ) {
-        /* Emulation sequence to type escape_key is escape_key +
-           escape_pass_key (that is escape key without Ctrl) */
-        net.get_current_state().push_back( Parser::UserByte( escape_key ) );
-      } else {
-        /* Escape key followed by anything other than . and ^ gets sent literally */
-        net.get_current_state().push_back( Parser::UserByte( escape_key ) );
-        net.get_current_state().push_back( Parser::UserByte( the_byte ) );
-      }
-
-      quit_sequence_started = false;
-
-      if ( overlays.get_notification_engine().get_notification_string() == escape_key_help ) {
-        overlays.get_notification_engine().set_notification_string( L"" );
-      }
-
-      continue;
-    }
-
-    quit_sequence_started
-      = ( escape_key > 0 ) && ( the_byte == escape_key ) && ( lf_entered || ( !escape_requires_lf ) );
-    if ( quit_sequence_started ) {
-      lf_entered = false;
-      overlays.get_notification_engine().set_notification_string( escape_key_help, true, false );
-      continue;
-    }
-
-    lf_entered = ( ( the_byte == 0x0A )
-                   || ( the_byte == 0x0D ) ); /* LineFeed, Ctrl-J, '\n' or CarriageReturn, Ctrl-M, '\r' */
-
-    if ( the_byte == 0x0C ) { /* Ctrl-L */
-      repaint_requested = true;
-    }
-
-    net.get_current_state().push_back( Parser::UserByte( the_byte ) );
-  }
-
-  return true;
+  return apply_bytes_to_keystroke_stream( passthrough, paste );
 }
 
 bool STMClient::process_resize( void )
@@ -458,6 +526,13 @@ bool STMClient::main( void )
         wait_time = std::min( 250, wait_time );
       }
 
+      /* Wake up in time to flush a held theme-probe reply that never completed */
+      if ( pending_reply_deadline != 0 ) {
+        uint64_t now = timestamp();
+        int reply_wait = ( pending_reply_deadline > now ) ? static_cast<int>( pending_reply_deadline - now ) : 0;
+        wait_time = std::min( wait_time, reply_wait );
+      }
+
       /* poll for events */
       /* network->fd() can in theory change over time */
       sel.clear_fds();
@@ -494,6 +569,23 @@ bool STMClient::main( void )
         } else if ( !network->shutdown_in_progress() ) {
           overlays.get_notification_engine().set_notification_string( std::wstring( L"Exiting..." ), true );
           network->start_shutdown();
+        }
+      }
+
+      /* A held theme-probe reply that never completed within its deadline
+         is just ordinary keystrokes -- release it. */
+      if ( pending_reply_deadline != 0 && timestamp() >= pending_reply_deadline && reply_filter.has_pending() ) {
+        std::string flushed;
+        reply_filter.flush( flushed );
+        pending_reply_deadline = 0;
+
+        if ( !apply_bytes_to_keystroke_stream( flushed, false ) ) {
+          if ( !network->has_remote_addr() ) {
+            break;
+          } else if ( !network->shutdown_in_progress() ) {
+            overlays.get_notification_engine().set_notification_string( std::wstring( L"Exiting..." ), true );
+            network->start_shutdown();
+          }
         }
       }
 

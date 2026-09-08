@@ -105,7 +105,15 @@ public:
 
   std::string terminal_to_host; /* this is the reply string */
 
+  /* Local terminal theme, fed by Parser::Theme events from the client.
+     Colours are XParseColor "rrrr/gggg/bbbb" (empty when unknown);
+     scheme is Parser::Theme::Scheme. */
+  std::string theme_foreground, theme_background;
+  int theme_scheme;
+  bool color_scheme_notify; /* DEC private mode 2031 */
+
   Dispatcher();
+  void set_theme( const std::string& foreground, const std::string& background, int scheme );
   int getparam( size_t N, int defaultval );
   int param_count( void );
 

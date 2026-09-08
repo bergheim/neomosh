@@ -31,6 +31,7 @@
 */
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <string>
 #include <utility>
@@ -329,6 +330,8 @@ static void CSI_DECSM( Framebuffer* fb, Dispatcher* dispatch )
       fb->ds.mouse_reporting_mode = (Terminal::DrawState::MouseReportingMode)param;
     } else if ( param == 1005 || param == 1006 || param == 1015 ) {
       fb->ds.mouse_encoding_mode = (Terminal::DrawState::MouseEncodingMode)param;
+    } else if ( param == 2031 ) { /* colour scheme change notification */
+      dispatch->color_scheme_notify = true;
     } else {
       set_if_available( get_DEC_mode( param, fb ), true );
     }
@@ -344,6 +347,8 @@ static void CSI_DECRM( Framebuffer* fb, Dispatcher* dispatch )
       fb->ds.mouse_reporting_mode = Terminal::DrawState::MOUSE_REPORTING_NONE;
     } else if ( param == 1005 || param == 1006 || param == 1015 ) {
       fb->ds.mouse_encoding_mode = Terminal::DrawState::MOUSE_ENCODING_DEFAULT;
+    } else if ( param == 2031 ) { /* colour scheme change notification */
+      dispatch->color_scheme_notify = false;
     } else {
       set_if_available( get_DEC_mode( param, fb ), false );
     }
@@ -489,6 +494,29 @@ static void CSI_DSR( Framebuffer* fb, Dispatcher* dispatch )
 
 static Function func_CSI_DSR( CSI, "n", CSI_DSR );
 
+/* private device status report -- e.g., colour scheme query (CSI ? 996 n) */
+static void CSI_DSR_Private( Framebuffer* fb __attribute( ( unused ) ), Dispatcher* dispatch )
+{
+  int param = dispatch->getparam( 0, 0 );
+
+  if ( param != 996 ) {
+    return;
+  }
+
+  switch ( dispatch->theme_scheme ) {
+    case Parser::Theme::SCHEME_DARK:
+      dispatch->terminal_to_host.append( "\033[?997;1n" );
+      break;
+    case Parser::Theme::SCHEME_LIGHT:
+      dispatch->terminal_to_host.append( "\033[?997;2n" );
+      break;
+    default:
+      break;
+  }
+}
+
+static Function func_CSI_DSR_Private( CSI, "?n", CSI_DSR_Private );
+
 /* insert line */
 static void CSI_IL( Framebuffer* fb, Dispatcher* dispatch )
 {
@@ -575,9 +603,10 @@ static void CSI_ECH( Framebuffer* fb, Dispatcher* dispatch )
 static Function func_CSI_ECH( CSI, "X", CSI_ECH );
 
 /* reset to initial state */
-static void Esc_RIS( Framebuffer* fb, Dispatcher* dispatch __attribute( ( unused ) ) )
+static void Esc_RIS( Framebuffer* fb, Dispatcher* dispatch )
 {
   fb->reset();
+  dispatch->color_scheme_notify = false;
 }
 
 static Function func_Esc_RIS( ESCAPE, "c", Esc_RIS );
@@ -623,9 +652,57 @@ static void OSC_8( const std::string& OSC_string, Framebuffer* fb )
   fb->ds.set_hyperlink( Hyperlink( OSC_string.substr( 2, second_semicolon - 2 ), std::move( url ) ) );
 }
 
+/* validate an XParseColor "rrrr/gggg/bbbb" colour: three components,
+   each 1-4 hex digits, separated by slashes. */
+static bool valid_theme_colour( const std::string& colour )
+{
+  if ( colour.empty() ) {
+    return false;
+  }
+
+  size_t start = 0;
+  for ( int component = 0; component < 3; component++ ) {
+    size_t end = ( component < 2 ) ? colour.find( '/', start ) : colour.size();
+    if ( component < 2 && end == std::string::npos ) {
+      return false;
+    }
+
+    size_t len = end - start;
+    if ( len < 1 || len > 4 ) {
+      return false;
+    }
+
+    for ( size_t i = start; i < end; i++ ) {
+      if ( !isxdigit( static_cast<unsigned char>( colour[i] ) ) ) {
+        return false;
+      }
+    }
+
+    start = end + 1;
+  }
+
+  return true;
+}
+
 /* xterm uses an Operating System Command to set the window title */
 void Dispatcher::OSC_dispatch( const Parser::OSC_End* act __attribute( ( unused ) ), Framebuffer* fb )
 {
+  /* OSC 10 ; ? and OSC 11 ; ? -- query foreground/background colour theme.
+     Setting forms (e.g. OSC 11;#000000) are silently ignored. */
+  if ( OSC_string.size() >= 3 && OSC_string[0] == L'1' && ( OSC_string[1] == L'0' || OSC_string[1] == L'1' )
+       && OSC_string[2] == L';' ) {
+    bool is_foreground = ( OSC_string[1] == L'0' );
+    if ( OSC_string.size() == 4 && OSC_string[3] == L'?' ) {
+      const std::string& colour = is_foreground ? theme_foreground : theme_background;
+      if ( valid_theme_colour( colour ) ) {
+        terminal_to_host.append( is_foreground ? "\033]10;rgb:" : "\033]11;rgb:" );
+        terminal_to_host.append( colour );
+        terminal_to_host.append( "\033\\" );
+      }
+    }
+    return;
+  }
+
   /* handle osc copy clipboard sequence 52;c; */
   if ( OSC_string.size() >= 5 && OSC_string[0] == L'5' && OSC_string[1] == L'2' && OSC_string[2] == L';'
        && OSC_string[3] == L'c' && OSC_string[4] == L';' ) {
