@@ -140,6 +140,8 @@ CLOSED: [2026-09-08 Tue 07:43]
 :LAST_AGENT: claude/claude-fable-5-1 (high)
 :END:
 :LOGBOOK:
+- Note taken on [2026-09-08 Tue 13:53] \\
+  User verified 2026-09-08: tux Ghostty to berghome, ssh plus tmux plus nvim --clean switches on toggle-darkmode; stock mosh stays dark; neomosh switches.
 - State "DONE"       from "INPROGRESS" [2026-09-08 Tue 07:43] \\
   Client probes the local terminal (mode 2031, DSR 996, OSC 10 and 11) at start and after SIGCONT, filters the replies out of the keystroke stream with Terminal::TerminalReplyFilter (100 ms hold deadline), and ships fg, bg and scheme as a Parser::Theme user event (new optional ThemeMessage extension in userinput.proto). Server dispatcher answers OSC 10 and 11 queries, CSI ? 996 n, tracks mode 2031 and emits CSI ? 997 ; N n on a real switch. Unit tests terminal-theme and terminal-reply-filter; full make check 32 pass 2 xfail; verified end to end with a pty harness (see linked note). Static PR 1394 handoff skipped. Peer review items adopted except the automake e2e test, which is a follow-up.
 - Session claude/claude-fable-5-1 (high) 4c3bc305-f927-4673-ae6a-1a8eeef6a7dd [2026-09-08 Tue 07:43]
