@@ -140,6 +140,8 @@ CLOSED: [2026-09-08 Tue 07:43]
 :LAST_AGENT: claude/claude-fable-5-1 (high)
 :END:
 :LOGBOOK:
+- Note taken on [2026-09-08 Tue 14:45] \\
+  User confirmed 2026-09-08 on the host: nvim follows Ghostty theme switches over neomosh to berghome, directly and inside tmux.
 - Note taken on [2026-09-08 Tue 13:53] \\
   User verified 2026-09-08: tux Ghostty to berghome, ssh plus tmux plus nvim --clean switches on toggle-darkmode; stock mosh stays dark; neomosh switches.
 - State "DONE"       from "INPROGRESS" [2026-09-08 Tue 07:43] \\
