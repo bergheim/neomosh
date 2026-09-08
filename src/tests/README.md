@@ -17,6 +17,19 @@ This tests Mosh's homegrown base64 functionality.  The associated
 `genbase64.pl` script is used to independently generate validated test
 vectors.
 
+## terminal-theme
+
+Unit test for the server side of theme propagation: the emulator's
+answers to OSC 10/11 `?` and `CSI ? 996 n` queries after a
+`Parser::Theme` event, DEC private mode 2031 tracking, and the
+`CSI ? 997 ; N n` notification on a scheme change.
+
+## terminal-reply-filter
+
+Unit test for `Terminal::TerminalReplyFilter`, the client-side state
+machine that picks the terminal's theme replies out of the keystroke
+stream: split, interleaved, malformed and held input.
+
 ## e2e-test
 
 This is a test framework for end-to-end testing of mosh.  It uses tmux

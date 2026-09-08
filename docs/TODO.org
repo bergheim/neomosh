@@ -1,5 +1,8 @@
 #+title: Neomosh — work log
 
+* Sequence
+Open tasks in intended order, by dependency. File order below is not authoritative; this list is. 1 Version handshake. 2 Identify as neomosh and capability queries. 3 OSC 52 clipboard fixes. 4 Cursor shape. 5 Client-side synchronized output. 6 Small upstream cherry-picks. 7 Theme propagation (done 2026-09-08). 8 Undercurl, then faint and strikethrough. 9 Unicode overhaul. 10 OOB channel, then SSH agent forwarding. 11 Kitty graphics. 12 Later items.
+
 * DONE Compare nine Neomosh logo concepts                            :design:
   CLOSED: [2026-09-07 Mon 12:54]
   :PROPERTIES:
