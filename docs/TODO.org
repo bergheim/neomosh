@@ -225,12 +225,17 @@ Transport only; agent forwarding and Kitty graphics are consumers with their own
 :END:
 Depends on the OOB channel task. Take src/agent and the mosh.pl -A plumbing from jdrouhard/mosh c3e826f plus cc4c44e, 1bcac25 and cc1e349 (configure option naming, case-sensitive option parsing). Explicit opt-in only, never default. Document the trust boundary: -A lets any process on the remote host sign with the local agent's keys for the life of the session. Socket cleanup on detach and on server exit. Test: ssh-add -l on the remote after mosh -A lists the local keys, and nothing after plain mosh.
 
-* TODO Kitty graphics protocol over mosh  :terminal:graphics:protocol:
+* INPROGRESS Kitty graphics protocol over mosh   :terminal:graphics:protocol:
 :PROPERTIES:
 :ID:       20260908T061138Z-3d4d0a
 :CREATED:  [2026-09-08 Tue 06:11]
+:LAST_AGENT: claude/claude-fable-5-1 (xhigh)
 :END:
 :LOGBOOK:
+- Note taken on [2026-09-08 Tue 17:51] \\
+  Emulator branch landed on master as 2d6e859: APC parser path, Kitty module with chunk assembly and caps, image store and row placements, replies. Three Codex review rounds fixed unbounded counts, geometry overflow, base64 UB, anchor column, C=1 scrolling, image numbers, replacement at capacity, delete semantics, number-map leak, checked parsing, id allocation. Grok headless could not review a diff this size; Gemini has no auth here. Accepted v1 limits recorded in the note. Next: wire branch.
+- State "INPROGRESS" from "TODO"       [2026-09-08 Tue 16:05]
+- Session claude/claude-fable-5-1 (xhigh) 6ca74d42-95eb-4c5e-9c57-37f750ceba9e [2026-09-08 Tue 16:05]
 - Note taken on [2026-09-08 Tue 15:33] \\
   Peer review 2026-09-08 (codex gpt-6-astra, grok 4.6, claude subagent) of the first work assessment: OOB is not a prerequisite, image bytes ride the HostMessage instruction as a new extension in ack-paced 32 KiB batches; the server stores opaque bytes and never decodes; pixel window size is a hard missing prerequisite (kitten icat exits on zero TIOCGWINSZ pixels), split into its own entry; the client emulator must not reply and diffs must be deterministic (asserts in apply_string and make_fragments); blobs shared between sent states; full repaint must a=d first; remap ids on the client; placements on rows not a table; there is no detach in mosh, the test is a link drop and roam. Upstream survey: no graphics PR in mobile-shell/mosh, issues 1081, 1166, 1248, 1093 and 1274 closed as too large for SSP; jdrouhard patched has no graphics commits. Design note written.
 - Note taken on [2026-09-08 Tue 06:22] \\
