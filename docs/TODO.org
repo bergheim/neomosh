@@ -232,6 +232,8 @@ Depends on the OOB channel task. Take src/agent and the mosh.pl -A plumbing from
 :LAST_AGENT: claude/claude-fable-5-1 (xhigh)
 :END:
 :LOGBOOK:
+- Note taken on [2026-09-08 Tue 19:16] \\
+  Wire branch landed on master as 51deb24: ImageChunk extension, ack-paced 32 KiB admission, WIRE-mode placement emission, client internal-id mode. Two Codex rounds fixed placement-before-entry ordering, peer assert, client store growth, id reuse after RIS, scroll-fallback delete ordering, chunk metadata trust, empty-chunk quadratic cost, bulk-delete leaks. Next: client rendering branch.
 - Note taken on [2026-09-08 Tue 17:51] \\
   Emulator branch landed on master as 2d6e859: APC parser path, Kitty module with chunk assembly and caps, image store and row placements, replies. Three Codex review rounds fixed unbounded counts, geometry overflow, base64 UB, anchor column, C=1 scrolling, image numbers, replacement at capacity, delete semantics, number-map leak, checked parsing, id allocation. Grok headless could not review a diff this size; Gemini has no auth here. Accepted v1 limits recorded in the note. Next: wire branch.
 - State "INPROGRESS" from "TODO"       [2026-09-08 Tue 16:05]
