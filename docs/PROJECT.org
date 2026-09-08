@@ -8,3 +8,12 @@ The project name is Neomosh, styled as =neomosh= in logo concepts. There is no f
 
 * Context source
 The purpose, audience, and identity brief above were confirmed by the user on 2026-09-07. =README.md= still describes upstream Mosh; recent source history includes OSC 8 hyperlink support.
+
+* Upstream relationship
+Upstream mobile-shell/mosh last released 1.4.0 in October 2022. Its master as of 2026-09-08 is 39 commits ahead of that, and this checkout sits at that head; the only user-visible addition is OSC 8 hyperlinks. Review upstream is slow, so open upstream PRs and the jdrouhard/mosh patched branch (undercurl, Unicode overhaul, out-of-band channel with agent forwarding) are treated as a cherry-pick source. The surveyed items live in =docs/TODO.org= under the =upstream= and =jdrouhard= tags.
+
+* Wire compatibility decision
+Decided 2026-09-08: neomosh does not maintain wire compatibility with upstream mosh. Both ends must be neomosh. The launcher verifies this with a version handshake and refuses a stock mosh-server, with an explicit escape hatch that disables neomosh-only features. This frees the framebuffer diff (renditions, Unicode occupancy), the user-input stream (theme events) and the transport (out-of-band channel) to change without dual-format code.
+
+* Image protocol decision
+Decided 2026-09-08: Kitty graphics protocol only, no sixel. Ghostty, kitty, WezTerm and Konsole speak Kitty; Ghostty dropped sixel in November 2024. Kitty's image ids and placements map onto a cell-based framebuffer, sixel's raw pixel bands do not.

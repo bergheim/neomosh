@@ -15,3 +15,219 @@
 - Session unknown [2026-09-07 Mon 12:43]
   :END:
 Create three original SVG suggestions each from Codex, Claude, and Grok using the approved project brief. Display all nine in a standalone HTML gallery with clear authorship, light/dark previews, and small-size samples. Verify desktop and phone rendering and provide a browser-viewable artifact.
+
+* DONE Verify playwright-cli uses system Chromium from any cwd       :verify:
+CLOSED: [2026-09-07 Mon 13:51]
+:PROPERTIES:
+:ID:       20260907T135058Z-1f1db8
+:CREATED:  [2026-09-07 Mon 13:50]
+:LAST_AGENT: unknown
+:END:
+:LOGBOOK:
+- State "DONE"       from "INPROGRESS" [2026-09-07 Mon 13:51] \\
+  Pass. Config executablePath=/usr/bin/chromium-browser. Both opens (docs/ and scratch/noconfig/) printed Page Title: Example Domain with no chrome-distribution or ExecutableMissing error. PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH unset. browser-check https://example.com --screenshot exited 0 (scratch/screenshot.png).
+- Session unknown [2026-09-07 Mon 13:51]
+- State "INPROGRESS" from "TODO"       [2026-09-07 Mon 13:50]
+- Session unknown [2026-09-07 Mon 13:50]
+:END:
+Run the exact playwright-cli/browser-check sequence. Pass if config has executablePath /usr/bin/chromium-browser, both opens print Page Title: Example Domain with no chrome-distribution or ExecutableMissing error, PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH is unset, and browser-check exits 0.
+
+* DONE Add Ahead logo to README                                      :design:
+CLOSED: [2026-09-07 Mon 14:44]
+:PROPERTIES:
+:ID:       20260907T144352Z-2860e2
+:CREATED:  [2026-09-07 Mon 14:43]
+:LAST_AGENT: unknown
+:END:
+:LOGBOOK:
+- State "DONE"       from "INPROGRESS" [2026-09-07 Mon 14:44] \\
+  Interim Ahead mark from docs/logo-concepts.html (Codex 03) as logo.svg, referenced at top of README.md. Commit e1f2b18.
+- Session unknown [2026-09-07 Mon 14:44]
+:END:
+Copy Codex Ahead mark from docs/logo-concepts.html into README.md as the interim identity.
+
+* DONE Move CI badge below README title                                :docs:
+CLOSED: [2026-09-07 Mon 14:49]
+:PROPERTIES:
+:ID:       20260907T144607Z-9cad67
+:CREATED:  [2026-09-07 Mon 14:46]
+:LAST_AGENT: unknown
+:END:
+:LOGBOOK:
+- State "DONE"       from "INPROGRESS" [2026-09-07 Mon 14:49] \\
+  Logo + neomosh wordmark, then title, then CI badge. Commit 75fc570.
+- Session unknown [2026-09-07 Mon 14:49]
+:END:
+CI badge sat between the Ahead logo and the title. Put logo then title then badge.
+
+* DONE Drop README wordmark under logo                                 :docs:
+CLOSED: [2026-09-07 Mon 14:51]
+:PROPERTIES:
+:ID:       20260907T145051Z-a3d894
+:CREATED:  [2026-09-07 Mon 14:50]
+:LAST_AGENT: unknown
+:END:
+:LOGBOOK:
+- State "DONE"       from "INPROGRESS" [2026-09-07 Mon 14:51] \\
+  Ahead mark only. Commit 36ab516.
+- Session unknown [2026-09-07 Mon 14:51]
+:END:
+Keep Ahead mark only; remove the neomosh text under it.
+
+* TODO Version handshake between neomosh client and server  :protocol:launcher:
+:PROPERTIES:
+:ID:       20260908T062827Z-2eb214
+:CREATED:  [2026-09-08 Tue 06:28]
+:END:
+Implements the both-ends-neomosh decision in PROJECT.org. mosh-server already prints MOSH CONNECT port key over ssh; add a line with the neomosh protocol version that mosh.pl reads. On a stock mosh-server or a version mismatch the launcher stops with a clear message telling the user to install neomosh on the host, with a --allow-upstream escape hatch that disables every neomosh-only feature for that session. Bump the protocol version whenever the wire diff changes (renditions, unicode occupancy, user events, OOB field). Must land before any of those.
+
+* TODO Identify as neomosh and answer capability queries  :terminal:identity:
+:PROPERTIES:
+:ID:       20260908T061621Z-db3946
+:CREATED:  [2026-09-08 Tue 06:16]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:22] \\
+  Peer review 2026-09-08 (codex, grok): consolidate DA1, DA2, XTVERSION and XTGETTCAP here, absorbing #1384 and the OSC 52 DA1 bit. Specify exact responses. Advertise only implemented semantics and update XTGETTCAP as each feature lands (Ms, Ss, Su, smxx). Vague DA2 trips xterm version gates.
+:END:
+Single owner of every capability response: DA1 (CSI c), DA2 (CSI > c), XTVERSION (CSI > 0 q, absorbing upstream PR #1384), and XTGETTCAP (DCS + q). Specify the exact reply strings in a note. DA2 must be a value xterm version gates accept. Advertise only implemented semantics, and update this task as each feature lands: OSC 52 in DA1 and Ms in XTGETTCAP with the clipboard task, Ss with cursor shape, Su and Smulx with undercurl, RGB and Tc for truecolor, hyperlinks for OSC 8, graphics only once the Kitty task works. Cross-check with the stash note on Pi and tmux hyperlink capability probing (20260904T040859). Test: nvim :checkhealth and kitten query-terminal over mosh report the same capabilities as over ssh.
+
+* TODO Cherry-pick OSC 52 clipboard fixes  :upstream:terminal:clipboard:
+:PROPERTIES:
+:ID:       20260908T061137Z-9d4135
+:CREATED:  [2026-09-08 Tue 06:11]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:21] \\
+  Peer review 2026-09-08 (codex, grok): Neovim probes XTGETTCAP Ms, not DA1, so advertise via both DA1 and XTGETTCAP together with the identity task. Writes only: reject the ? read form (clipboard steal), bound payload size, define selector policy. Test with clipetty or Emacs built-in OSC 52 and nvim clipboard, not xclip-mode which shells out to xclip.
+:END:
+Upstream master only handles OSC 52 with selector c. Pull PR #1054 (tmux and other clipboard updates, gwicke) and #1104 (additional selector types, empty Pc; mgulick), both also on jdrouhard/mosh patched as 3c23372 and e922128. Write-only: reject the ? read form so a remote cannot read the local clipboard. Bound the payload size and decide the selector policy (c, p, s, and empty). Issue #637 (15 votes) is the tracking bug. Advertising support (DA1 per issue #1399, and XTGETTCAP Ms which is what Neovim probes) belongs to the capability task and must land together with this. Test with Emacs built-in OSC 52 or clipetty, nvim clipboard, and tmux copy-mode over mosh into Ghostty.
+
+* TODO Cursor shape DECSCUSR support  :upstream:terminal:cursor:
+:PROPERTIES:
+:ID:       20260908T061137Z-fd7844
+:CREATED:  [2026-09-08 Tue 06:11]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:21] \\
+  Peer review 2026-09-08 (grok): emission lives in the client Display, not only server init. Also reset on DECSTR (CSI ! p). Do not emit CSI 0 SP q at connect since it overwrites the local cursor setting.
+:END:
+Pull upstream PR #1355 (dabeibao, 16 comments, design converged on approach 1). Issue #352 has 37 votes. Do not take the older #1167 variant carried on jdrouhard/mosh (c7740d4); it has the reset bug found in #1355 where cursor_shape resets to -1 on ESC c and never syncs to the client. Init to 0 instead. Emission lives in the client Display diff, and must also reset on DECSTR (CSI ! p). Never emit CSI 0 SP q at connect, that overwrites the local terminal cursor setting. Test: set bar cursor, run reset, cursor must return to default.
+
+* TODO Client-side synchronized output around Display frames  :terminal:client:
+:PROPERTIES:
+:ID:       20260908T062827Z-acfab0
+:CREATED:  [2026-09-08 Tue 06:28]
+:END:
+Independent and cheap. mosh-client wraps each Display frame it writes to the local tty in CSI ? 2026 h and CSI ? 2026 l when the local terminal supports the mode, so a frame never shows half drawn. Detect support via XTGETTCAP Sync or DECRQM. Server-side batching of a remote app's 2026 region into one diff (upstream issue #1312) stays in the later task; it needs a timeout, a size limit and recovery from an update that never ends.
+
+* TODO Small upstream cherry-picks  :upstream:cherrypick:
+:PROPERTIES:
+:ID:       20260908T061622Z-69bf84
+:CREATED:  [2026-09-08 Tue 06:16]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:22] \\
+  Peer review 2026-09-08 (grok): do #1382 first. #1384 XTVERSION overlaps the identity task, land it there. Check OSC 7 and OSC 9 replay behaviour across redraw and reconnect.
+:END:
+Open upstream PRs that are small and independent, one commit each, make check after each, in this order: #1382 select include config.h (vapier), #1383 OSC 7 working directory (zedinosaur), #1405 announce lower mouse tracking modes cumulatively (kedimuzafer), #1407 MOSH_GRAB_MOUSE (18woldemar), #1365 manual DNS re-resolve command (eminence), #1361 session age in the detached sessions warning (eminence), #1144 OSC 9 and 777 notifications (rrgeorge, skip the OSC 1337 file part), #1187 unset stale SSH_TTY (ProducerMatt, on jdrouhard as 42e0893). #1384 XTVERSION moved to the capability task. Check that OSC 7 and OSC 9 do not replay on redraw or reconnect.
+
+* TODO Live light and dark theme propagation over mosh  :terminal:theme:protocol:
+:PROPERTIES:
+:ID:       20260908T061137Z-c18732
+:CREATED:  [2026-09-08 Tue 06:11]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:21] \\
+  Peer review 2026-09-08 (codex, grok): query replies share the tty input with keystrokes and paste, so the client needs incremental demux with deadlines, handling of late or unsolicited replies, and restoration of local reporting modes. Track remote mode 2031 enable and reset separately. Verify which terminals send DSR 997: grok claims kitty and foot do not, only Contour and Ghostty; if so add an OSC 11 re-query fallback. Test must read the reply, printf alone proves nothing. Compatibility: define mixed-version behaviour and fallback for the new user event, we do not own stock mosh-server peers.
+:END:
+Goal: the local terminal theme, including a switch mid-session (Ghostty, kitty, foot, Contour), is seen by remote apps exactly as over ssh. Upstream PR #1394 (amir-jakoby) is the reference for the server-side OSC 10 and 11 answer path and its terminal-osc-default-colors regression test; its Perl -@ argv handoff is skipped, the connect-time probe is simply the first event. Pieces. One: mosh-client queries OSC 10 and 11 at startup and on change; replies share the tty input with keystrokes and paste, so parse them incrementally with a deadline, tolerate late or unsolicited replies and terminals that never answer, and restore local reporting modes on exit. Two: change notification via DEC private mode 2031 and CSI ? 997 ; 1 n (dark) or CSI ? 997 ; 2 n (light); verify which terminals actually send it (grok claims only Contour and Ghostty, not kitty or foot) and fall back to a periodic or focus-triggered OSC 11 re-query otherwise. Three: ship fg and bg through Network::UserStream as a new event type in src/statesync/user.* and src/protobufs/userinput.proto, alongside resize. Four: the server emulator stores live values in the framebuffer, answers OSC 10 and 11 ? queries from them, tracks remote mode 2031 enable and reset separately, and re-emits CSI ? 997 n to remote apps that enabled it. Wire change is covered by the both-ends-neomosh decision in PROJECT.org and the version handshake task. Test: e2e with a fake terminal that answers OSC 11, flip the answer mid-session, a remote query must read back the new value and a remote app with 2031 enabled must receive the notification.
+
+* CANCELLED Static OSC 10 and 11 default colour queries  :upstream:terminal:theme:
+CLOSED: [2026-09-08 Tue 06:28]
+:PROPERTIES:
+:ID:       20260908T061137Z-6b5f31
+:CREATED:  [2026-09-08 Tue 06:11]
+:LAST_AGENT: claude/claude-fable-5-1 (high)
+:END:
+:LOGBOOK:
+- State "CANCELLED"  from "TODO"       [2026-09-08 Tue 06:28] \\
+  Folded into the live theme task after peer review: the Perl -@ argv handoff would be throwaway once the UserStream event exists and leaks colours via ps. PR #1394 stays the reference for the server-side OSC 10 and 11 answer path.
+- Session claude/claude-fable-5-1 (high) 4c3bc305-f927-4673-ae6a-1a8eeef6a7dd [2026-09-08 Tue 06:28]
+- Note taken on [2026-09-08 Tue 06:21] \\
+  Peer review 2026-09-08 (codex, grok): the Perl -@ argv handoff is throwaway once live UserStream events exist and leaks values via ps. Consider skipping it and treating the connect-time probe as the first live event. If kept: timeout on the probe, accept both rgb: and # forms.
+:END:
+Pull upstream PR #1394 (amir-jakoby, open since June 2026, reworked August 2026 to avoid env vars). The Perl wrapper probes the local terminal for OSC 10 and 11 replies at connect, forwards sanitized rgb values as internal mosh-server new -@ mosh-default-fg and -@ mosh-default-bg arguments, and the server emulator answers ? queries from those values. Fixes issues #1145 and #1351. This gives vim and neovim the correct light or dark background at session start. It is a snapshot only; live switching is the next task. Comes with a regression test terminal-osc-default-colors.
+
+* TODO Undercurl and underline colour support  :terminal:rendition:jdrouhard:
+:PROPERTIES:
+:ID:       20260908T061137Z-ce718c
+:CREATED:  [2026-09-08 Tue 06:11]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:22] \\
+  Peer review 2026-09-08 (codex, grok): 4:1 is single, 4:2 double, 4:3 curl, 4:4 dotted, 4:5 dashed. Colon subparameters are parser CSI_PARAM work, not only getparamext. The Renditions layout change alters the wire diff, so it needs the compatibility policy. Order: this before faint and strikethrough.
+:END:
+Take jdrouhard/mosh commits aff5e1c and 1d8ac61. Adds SGR 4:1 single, 4:2 double, 4:3 curl, 4:4 dotted, 4:5 dashed underline styles and SGR 58 underline colour with both colon and semicolon parameter forms, and rewrites Renditions from packed 25/25/8 bitfields to plain uint32 fg, bg, underline_color plus uint16 attributes. Colon subparameters are parser CSI_PARAM work, not only a getparamext accessor. Not sent upstream by anyone. Expect conflicts with the OSC 8 hyperlink cell changes in master; resolve by hand. Land this before faint and strikethrough since both touch the same struct. Test SGR 24 clears every underline style and 59 resets underline colour. Neovim and Emacs diagnostics are the visible win. Add an emulation-attributes symlink case.
+
+* TODO Faint SGR 2 and strikethrough SGR 9 renditions  :upstream:terminal:rendition:
+:PROPERTIES:
+:ID:       20260908T061137Z-9bc244
+:CREATED:  [2026-09-08 Tue 06:11]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:21] \\
+  Peer review 2026-09-08 (codex, grok): land the undercurl rendition rewrite first, then this on top. Test SGR 22 clears bold and faint, 29 clears strike, 24 clears underline, 59 resets underline colour. Pick one PR by semantics, not by clean apply.
+:END:
+Land after the undercurl rendition rewrite. Upstream PRs #1380 (antonme), #1404 (trevorbernard) and the older #1059 (stanspas, on jdrouhard/mosh as 481d45d and a1cca09) add the same thing; pick by semantics, not by clean apply. Test SGR 22 clears both bold and faint, 29 clears strikethrough, and combined faint plus bold. Add an emulation-attributes symlink case for each.
+
+* TODO Unicode width and grapheme combining overhaul  :upstream:terminal:unicode:jdrouhard:
+:PROPERTIES:
+:ID:       20260908T061137Z-33c85c
+:CREATED:  [2026-09-08 Tue 06:11]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:22] \\
+  Peer review 2026-09-08 (codex, grok): scope understated. Width tables, grapheme segmentation, framebuffer editing and prediction are separate changes. Cover right-margin wrap, overwrite and erase of wide clusters, combining sequences split across updates, client and server width disagreement, CJK ambiguous width. Overlay prediction in #1410 must share the emulator wcwidth. Unicode 16 tables are already stale.
+:END:
+Four separate changes, one branch each. Width tables: upstream PR #1289 (zhaofengli, fish-shell wcwidth) then jdrouhard/mosh d1174bb (Unicode 16, already stale, regenerate from the current UCD) and b31161a (VS16 forces wide). Grapheme segmentation: jdrouhard 4c049cf, 13341d1, 3d613c8 (combining, ZWJ, regional indicator flags). Framebuffer editing: overwrite and erase of wide clusters, right-margin wrap of a wide cell, combining sequences split across two updates. Prediction: upstream PR #1410 (ventusff, wide characters in the local echo overlay) which must share the emulator wcwidth. Decide CJK ambiguous width policy. Client and server width disagreement is the failure mode to test explicitly. Fixes emoji and flag corruption tracked in issue #1041. Test with a screen of flags, ZWJ family emoji and VS16 symbols against ssh into Ghostty and kitty, since ssh alone does not establish correctness.
+
+* TODO Out-of-band reliable channel in the transport  :protocol:network:jdrouhard:
+:PROPERTIES:
+:ID:       20260908T061137Z-5bfaf0
+:CREATED:  [2026-09-08 Tue 06:11]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:22] \\
+  Peer review 2026-09-08 (codex, grok): split into two deliverables, transport first. Graphics wants a reliable blob pipe, agent wants a socket proxy; the 2013 code has three modes and its own seq and ack which may be more than needed. Acceptance needs bounded buffering, backpressure, head-of-line blocking analysis, loss and reorder tests, MTU and fragment reuse, stream close, reconnect, socket cleanup, explicit opt-in. Document that -A lets the remote sign with your keys.
+:END:
+Transport only; agent forwarding and Kitty graphics are consumers with their own tasks. Base: Timo Rinne and Ivan Shapovalov's OOB layer from upstream PR #1297 (open, rebased from #696 of 2015), on jdrouhard/mosh as c3e826f, be2a748, c81c650, 70d8e8b and 0a7d917. It adds an oob bytes field 8 to transportinstruction.proto, src/network/outofband.* with stream, datagram and reliable-datagram modes and its own seq and ack numbers, and an OutOfBandPlugin interface hooked into both event loops. Decide whether all three modes are needed; graphics wants a reliable blob pipe, agent wants a socket proxy. Code is from 2013: clang-format, C++17 cleanup, and a look at the fixed-fd handling in swrite. Acceptance: bounded buffering and backpressure, head-of-line blocking analysis against the framebuffer diff, reuse of the existing fragment and MTU handling, loss and reorder tests through ntester or a lossy netns, stream close semantics, behaviour across reconnect, and no effect on sessions that never open a channel.
+
+* TODO SSH agent forwarding over the OOB channel  :network:agent:jdrouhard:
+:PROPERTIES:
+:ID:       20260908T062827Z-9fbfa8
+:CREATED:  [2026-09-08 Tue 06:28]
+:END:
+Depends on the OOB channel task. Take src/agent and the mosh.pl -A plumbing from jdrouhard/mosh c3e826f plus cc4c44e, 1bcac25 and cc1e349 (configure option naming, case-sensitive option parsing). Explicit opt-in only, never default. Document the trust boundary: -A lets any process on the remote host sign with the local agent's keys for the life of the session. Socket cleanup on detach and on server exit. Test: ssh-add -l on the remote after mosh -A lists the local keys, and nothing after plain mosh.
+
+* TODO Kitty graphics protocol over mosh  :terminal:graphics:protocol:
+:PROPERTIES:
+:ID:       20260908T061138Z-3d4d0a
+:CREATED:  [2026-09-08 Tue 06:11]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:22] \\
+  Peer review 2026-09-08 (codex, grok): needs a protocol design doc before transport work. a=q tests one request, it does not advertise a mode list. Define responses and errors, implicit image ids, placement ids, chunk assembly, ordering of blob delivery vs framebuffer update, reconnect vs fresh client. Unicode placeholders put the image id in the cell foreground, which fights OSC 8, truecolor and underline colour; prefer hyperlink-style cell metadata unless the local terminal needs placeholders. Cap the image store. tmux inside mosh also parses APC G. Do not advertise graphics anywhere until it works.
+:END:
+Depends on the OOB channel task. Write a design note in docs/notes before any code. Decision: Kitty only, no sixel (Ghostty dropped sixel in November 2024; sixel has no cell identity, which makes a framebuffer representation awkward). Design questions the note must answer: image ids including implicit ids and placement ids; chunk assembly (m=1) for a=t and a=T with direct transmission f=100, 32 and 24; responses and error codes back to the remote app; ordering of blob delivery over the OOB stream versus the framebuffer diff that references it; cell representation, preferring hyperlink-style cell metadata like OSC 8 over Unicode placeholders since placeholders put the image id in the cell foreground and collide with OSC 8, truecolor and underline colour; delete (a=d), scroll-off, alternate screen; image store cap on both ends; reconnect (client re-requests blobs it lacks) versus a fresh client; tmux inside mosh also parsing APC G. Server answers a=q queries only for what it implements and never advertises file or shared-memory transmission, which assume a shared filesystem; kitten icat falls back correctly. Do not advertise graphics in any capability response until it works. Test: kitten icat of a png over mosh into Ghostty, then scroll, detach and reconnect.
+
+* TODO Later: unowned upstream feature requests  :upstream:later:
+:PROPERTIES:
+:ID:       20260908T061621Z-4da32b
+:CREATED:  [2026-09-08 Tue 06:16]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-08 Tue 06:22] \\
+  Peer review 2026-09-08 (codex, grok): client-side mode 2026 around Display frames is cheap and independent, promote it; server batching needs timeout, size limit and incomplete-update recovery. Kitty keyboard is server to client signalling: the app enables CSI u on the server pty but keys are encoded on the client tty, so it needs negotiation, mode lifecycle and prediction handling. Sixel: lacking cell identity complicates, does not forbid.
+:END:
+Upstream issues with no PR that fit neomosh once the above lands. Server-side synchronized output DEC mode 2026 (#1312): batch a remote app's update region into one diff, with a timeout, size limit and recovery from an unterminated update; the client-side half is its own task. OSC 133 shell integration marks (#1385). OSC 4 palette get and set (#1350). Kitty keyboard protocol (CSI u, no upstream issue): the app enables it on the server pty but keys are encoded on the client tty, so it is server-to-client signalling with mode lifecycle, negotiation and prediction handling, not a pass-through. Scrollback (#122, 276 votes) is out of scope.
