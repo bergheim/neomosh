@@ -517,6 +517,41 @@ static void CSI_DSR_Private( Framebuffer* fb __attribute( ( unused ) ), Dispatch
 
 static Function func_CSI_DSR_Private( CSI, "?n", CSI_DSR_Private );
 
+/* window operations -- e.g. XTWINOPS pixel/cell/text-area size queries (CSI Ps t) */
+static void CSI_WINOPS( Framebuffer* fb, Dispatcher* dispatch )
+{
+  /* only the plain single-parameter forms are answered; e.g. "14;2" is ignored */
+  if ( dispatch->param_count() != 1 ) {
+    return;
+  }
+
+  char reply[32];
+
+  switch ( dispatch->getparam( 0, 0 ) ) {
+    case 14: /* report window size in pixels */
+      if ( ( fb->ds.get_xpixel() > 0 ) && ( fb->ds.get_ypixel() > 0 ) ) {
+        snprintf( reply, sizeof( reply ), "\033[4;%d;%dt", fb->ds.get_ypixel(), fb->ds.get_xpixel() );
+        dispatch->terminal_to_host.append( reply );
+      }
+      break;
+    case 16: /* report cell size in pixels */
+      if ( ( fb->ds.get_cell_height_px() > 0 ) && ( fb->ds.get_cell_width_px() > 0 ) ) {
+        snprintf(
+          reply, sizeof( reply ), "\033[6;%d;%dt", fb->ds.get_cell_height_px(), fb->ds.get_cell_width_px() );
+        dispatch->terminal_to_host.append( reply );
+      }
+      break;
+    case 18: /* report text area size in characters */
+      snprintf( reply, sizeof( reply ), "\033[8;%d;%dt", fb->ds.get_height(), fb->ds.get_width() );
+      dispatch->terminal_to_host.append( reply );
+      break;
+    default:
+      break;
+  }
+}
+
+static Function func_CSI_WINOPS( CSI, "t", CSI_WINOPS );
+
 /* insert line */
 static void CSI_IL( Framebuffer* fb, Dispatcher* dispatch )
 {

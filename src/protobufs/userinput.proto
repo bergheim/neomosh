@@ -19,6 +19,8 @@ message Keystroke {
 message ResizeMessage {
   optional int32 width = 5;
   optional int32 height = 6;
+  optional int32 xpixel = 7;
+  optional int32 ypixel = 8;
 }
 
 /* Local terminal theme: default colours in XParseColor form

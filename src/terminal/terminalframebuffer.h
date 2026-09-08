@@ -286,6 +286,7 @@ class DrawState
 {
 private:
   int width, height;
+  int xpixel, ypixel; /* pixel size of the terminal, 0 when unknown */
 
   void new_grapheme( void );
   void snap_cursor_to_border( void );
@@ -348,6 +349,11 @@ public:
   int get_combining_char_row( void ) const { return combining_char_row; }
   int get_width( void ) const { return width; }
   int get_height( void ) const { return height; }
+  int get_xpixel( void ) const { return xpixel; }
+  int get_ypixel( void ) const { return ypixel; }
+  /* derived cell size in pixels, 0 when unknown */
+  int get_cell_width_px( void ) const { return ( xpixel > 0 && width > 0 ) ? xpixel / width : 0; }
+  int get_cell_height_px( void ) const { return ( ypixel > 0 && height > 0 ) ? ypixel / height : 0; }
 
   void set_tab( void );
   void clear_tab( int col );
@@ -377,9 +383,9 @@ public:
   void restore_cursor( void );
   void clear_saved_cursor( void ) { save = SavedCursor(); }
 
-  void resize( int s_width, int s_height );
+  void resize( int s_width, int s_height, int s_xpixel = -1, int s_ypixel = -1 ); /* pixels < 0: keep current */
 
-  DrawState( int s_width, int s_height );
+  DrawState( int s_width, int s_height, int s_xpixel = 0, int s_ypixel = 0 );
 
   bool operator==( const DrawState& x ) const
   {
@@ -504,7 +510,7 @@ public:
 
   void prefix_window_title( const title_type& s );
 
-  void resize( int s_width, int s_height );
+  void resize( int s_width, int s_height, int s_xpixel = -1, int s_ypixel = -1 ); /* pixels < 0: keep current */
 
   void reset_cell( Cell* c ) { c->reset( ds.get_background_rendition() ); }
   void reset_row( Row* r ) { r->reset( ds.get_background_rendition() ); }

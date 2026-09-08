@@ -162,13 +162,20 @@ class Resize : public Action
   /* resize event -- not part of the host-source state machine*/
 public:
   size_t width, height;
+  int xpixel, ypixel; /* pixel size of the terminal, 0 when unknown */
 
   std::string name( void ) { return std::string( "Resize" ); }
   void act_on_terminal( Terminal::Emulator* emu ) const;
 
-  Resize( size_t s_width, size_t s_height ) : width( s_width ), height( s_height ) {}
+  Resize( size_t s_width, size_t s_height, int s_xpixel = 0, int s_ypixel = 0 )
+    : width( s_width ), height( s_height ), xpixel( s_xpixel ), ypixel( s_ypixel )
+  {}
 
-  bool operator==( const Resize& other ) const { return ( width == other.width ) && ( height == other.height ); }
+  bool operator==( const Resize& other ) const
+  {
+    return ( width == other.width ) && ( height == other.height ) && ( xpixel == other.xpixel )
+           && ( ypixel == other.ypixel );
+  }
 };
 
 class Theme : public Action

@@ -95,7 +95,7 @@ void UserByte::act_on_terminal( Terminal::Emulator* emu ) const
 
 void Resize::act_on_terminal( Terminal::Emulator* emu ) const
 {
-  emu->resize( width, height );
+  emu->resize( width, height, xpixel, ypixel );
 }
 
 void Theme::act_on_terminal( Terminal::Emulator* emu ) const

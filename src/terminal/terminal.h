@@ -73,7 +73,7 @@ private:
   void CSI_dispatch( const Parser::CSI_Dispatch* act );
   void Esc_dispatch( const Parser::Esc_Dispatch* act );
   void OSC_end( const Parser::OSC_End* act );
-  void resize( size_t s_width, size_t s_height );
+  void resize( size_t s_width, size_t s_height, int s_xpixel = -1, int s_ypixel = -1 );
   void set_theme( const std::string& foreground, const std::string& background, int scheme );
 
 public:

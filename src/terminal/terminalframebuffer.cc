@@ -60,14 +60,14 @@ void DrawState::reinitialize_tabs( unsigned int start )
   }
 }
 
-DrawState::DrawState( int s_width, int s_height )
-  : width( s_width ), height( s_height ), cursor_col( 0 ), cursor_row( 0 ), combining_char_col( 0 ),
-    combining_char_row( 0 ), default_tabs( true ), tabs( s_width ), scrolling_region_top_row( 0 ),
-    scrolling_region_bottom_row( height - 1 ), renditions( 0 ), hyperlink(), save(), next_print_will_wrap( false ),
-    origin_mode( false ), auto_wrap_mode( true ), insert_mode( false ), cursor_visible( true ),
-    reverse_video( false ), bracketed_paste( false ), mouse_reporting_mode( MOUSE_REPORTING_NONE ),
-    mouse_focus_event( false ), mouse_alternate_scroll( false ), mouse_encoding_mode( MOUSE_ENCODING_DEFAULT ),
-    application_mode_cursor_keys( false )
+DrawState::DrawState( int s_width, int s_height, int s_xpixel, int s_ypixel )
+  : width( s_width ), height( s_height ), xpixel( s_xpixel ), ypixel( s_ypixel ), cursor_col( 0 ), cursor_row( 0 ),
+    combining_char_col( 0 ), combining_char_row( 0 ), default_tabs( true ), tabs( s_width ),
+    scrolling_region_top_row( 0 ), scrolling_region_bottom_row( height - 1 ), renditions( 0 ), hyperlink(), save(),
+    next_print_will_wrap( false ), origin_mode( false ), auto_wrap_mode( true ), insert_mode( false ),
+    cursor_visible( true ), reverse_video( false ), bracketed_paste( false ),
+    mouse_reporting_mode( MOUSE_REPORTING_NONE ), mouse_focus_event( false ), mouse_alternate_scroll( false ),
+    mouse_encoding_mode( MOUSE_ENCODING_DEFAULT ), application_mode_cursor_keys( false )
 {
   reinitialize_tabs( 0 );
 }
@@ -403,14 +403,14 @@ void Framebuffer::soft_reset( void )
   ds.clear_saved_cursor();
 }
 
-void Framebuffer::resize( int s_width, int s_height )
+void Framebuffer::resize( int s_width, int s_height, int s_xpixel, int s_ypixel )
 {
   assert( s_width > 0 );
   assert( s_height > 0 );
 
   int oldheight = ds.get_height();
   int oldwidth = ds.get_width();
-  ds.resize( s_width, s_height );
+  ds.resize( s_width, s_height, s_xpixel, s_ypixel );
 
   row_pointer blankrow( newrow() );
   if ( oldheight != s_height ) {
@@ -426,7 +426,7 @@ void Framebuffer::resize( int s_width, int s_height )
   }
 }
 
-void DrawState::resize( int s_width, int s_height )
+void DrawState::resize( int s_width, int s_height, int s_xpixel, int s_ypixel )
 {
   if ( ( width != s_width ) || ( height != s_height ) ) {
     /* reset entire scrolling region on any resize */
@@ -443,6 +443,12 @@ void DrawState::resize( int s_width, int s_height )
 
   width = s_width;
   height = s_height;
+  if ( s_xpixel >= 0 ) {
+    xpixel = s_xpixel;
+  }
+  if ( s_ypixel >= 0 ) {
+    ypixel = s_ypixel;
+  }
 
   snap_cursor_to_border();
 

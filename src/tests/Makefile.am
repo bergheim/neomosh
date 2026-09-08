@@ -39,8 +39,8 @@ displaytests = \
 	unicode-later-combining.test \
 	window-resize.test
 
-check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale terminal-theme terminal-reply-filter
-TESTS = ocb-aes encrypt-decrypt base64 nonce-incr terminal-theme terminal-reply-filter local.test $(displaytests)
+check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale terminal-theme terminal-winops terminal-reply-filter
+TESTS = ocb-aes encrypt-decrypt base64 nonce-incr terminal-theme terminal-winops terminal-reply-filter local.test $(displaytests)
 XFAIL_TESTS = \
 	e2e-failure.test \
 	emulation-attributes-256color8.test
@@ -76,6 +76,10 @@ is_utf8_locale_LDADD = ../util/libmoshutil.a $(LIBUTIL)
 terminal_theme_SOURCES = terminal-theme.cc
 terminal_theme_CPPFLAGS = -I$(srcdir)/../statesync -I$(srcdir)/../terminal -I$(srcdir)/../protobufs $(protobuf_CFLAGS)
 terminal_theme_LDADD = ../statesync/libmoshstatesync.a ../terminal/libmoshterminal.a ../protobufs/libmoshprotos.a ../util/libmoshutil.a $(protobuf_LIBS) $(TINFO_LIBS)
+
+terminal_winops_SOURCES = terminal-winops.cc
+terminal_winops_CPPFLAGS = -I$(srcdir)/../statesync -I$(srcdir)/../terminal -I$(srcdir)/../protobufs $(protobuf_CFLAGS)
+terminal_winops_LDADD = ../statesync/libmoshstatesync.a ../terminal/libmoshterminal.a ../protobufs/libmoshprotos.a ../util/libmoshutil.a $(protobuf_LIBS) $(TINFO_LIBS)
 
 terminal_reply_filter_SOURCES = terminal-reply-filter.cc
 terminal_reply_filter_CPPFLAGS = -I$(top_srcdir)/

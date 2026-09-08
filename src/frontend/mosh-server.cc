@@ -782,12 +782,15 @@ static void serve( int host_fd,
               /* tell child process of resize */
               const Parser::Resize& res = static_cast<const Parser::Resize&>( action );
               struct winsize window_size;
+              memset( &window_size, 0, sizeof( window_size ) );
               if ( ioctl( host_fd, TIOCGWINSZ, &window_size ) < 0 ) {
                 perror( "ioctl TIOCGWINSZ" );
                 network.start_shutdown();
               }
               window_size.ws_col = res.width;
               window_size.ws_row = res.height;
+              window_size.ws_xpixel = res.xpixel;
+              window_size.ws_ypixel = res.ypixel;
               if ( ioctl( host_fd, TIOCSWINSZ, &window_size ) < 0 ) {
                 perror( "ioctl TIOCSWINSZ" );
                 network.start_shutdown();

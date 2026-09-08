@@ -281,7 +281,8 @@ void STMClient::main_init( void )
   network->set_send_delay( 1 ); /* minimal delay on outgoing keystrokes */
 
   /* tell server the size of the terminal */
-  network->get_current_state().push_back( Parser::Resize( window_size.ws_col, window_size.ws_row ) );
+  network->get_current_state().push_back(
+    Parser::Resize( window_size.ws_col, window_size.ws_row, window_size.ws_xpixel, window_size.ws_ypixel ) );
 
   /* be noisy as necessary */
   network->set_verbose( verbose );
@@ -484,7 +485,7 @@ bool STMClient::process_resize( void )
   }
 
   /* tell remote emulator */
-  Parser::Resize res( window_size.ws_col, window_size.ws_row );
+  Parser::Resize res( window_size.ws_col, window_size.ws_row, window_size.ws_xpixel, window_size.ws_ypixel );
 
   if ( !network->shutdown_in_progress() ) {
     network->get_current_state().push_back( res );

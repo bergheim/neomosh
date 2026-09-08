@@ -41,6 +41,21 @@ using namespace Parser;
 using namespace Network;
 using namespace ClientBuffers;
 
+namespace {
+/* ws_xpixel and ws_ypixel are unsigned short in struct winsize; clamp the
+   peer-supplied values into that range. 0 means unknown. */
+int32_t clamp_pixel_field( int32_t value )
+{
+  if ( value < 0 ) {
+    return 0;
+  }
+  if ( value > 65535 ) {
+    return 65535;
+  }
+  return value;
+}
+}
+
 void UserStream::subtract( const UserStream* prefix )
 {
   // if we are subtracting ourself from ourself, just clear the std::deque
@@ -88,6 +103,8 @@ std::string UserStream::diff_from( const UserStream& existing ) const
         Instruction* new_inst = output.add_instruction();
         new_inst->MutableExtension( resize )->set_width( my_it->resize.width );
         new_inst->MutableExtension( resize )->set_height( my_it->resize.height );
+        new_inst->MutableExtension( resize )->set_xpixel( my_it->resize.xpixel );
+        new_inst->MutableExtension( resize )->set_ypixel( my_it->resize.ypixel );
       } break;
       case ThemeType: {
         Instruction* new_inst = output.add_instruction();
@@ -118,8 +135,9 @@ void UserStream::apply_string( const std::string& diff )
         actions.push_back( UserEvent( UserByte( the_bytes.at( loc ) ) ) );
       }
     } else if ( input.instruction( i ).HasExtension( resize ) ) {
-      actions.push_back( UserEvent( Resize( input.instruction( i ).GetExtension( resize ).width(),
-                                            input.instruction( i ).GetExtension( resize ).height() ) ) );
+      const ResizeMessage& rm = input.instruction( i ).GetExtension( resize );
+      actions.push_back( UserEvent(
+        Resize( rm.width(), rm.height(), clamp_pixel_field( rm.xpixel() ), clamp_pixel_field( rm.ypixel() ) ) ) );
     } else if ( input.instruction( i ).HasExtension( theme ) ) {
       const ThemeMessage& tm = input.instruction( i ).GetExtension( theme );
       actions.push_back( UserEvent( Theme( tm.foreground(), tm.background(), tm.scheme() ) ) );

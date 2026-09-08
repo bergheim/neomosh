@@ -166,9 +166,9 @@ void Emulator::Esc_dispatch( const Parser::Esc_Dispatch* act )
   }
 }
 
-void Emulator::resize( size_t s_width, size_t s_height )
+void Emulator::resize( size_t s_width, size_t s_height, int s_xpixel, int s_ypixel )
 {
-  fb.resize( s_width, s_height );
+  fb.resize( s_width, s_height, s_xpixel, s_ypixel );
 }
 
 void Emulator::set_theme( const std::string& foreground, const std::string& background, int scheme )
