@@ -85,6 +85,13 @@ private:
   Parser::Theme last_sent_theme;
   uint64_t pending_reply_deadline; /* 0 when nothing is held by reply_filter */
 
+  /* True from sending KITTY_PROBE (in init() or resume()) until either a
+     GRAPHICS reply arrives or reply_filter's held-bytes deadline gives up
+     on whatever it's currently holding -- while true, that deadline is
+     500ms instead of the usual 100ms, since a real terminal's answer to a
+     graphics query can be slower than its answer to the theme probe. */
+  bool kitty_probe_awaiting_reply;
+
   /* Outcome of feeding one keystroke byte through the escape-key/quit-sequence
      state machine below. */
   enum class InputAction
@@ -124,7 +131,7 @@ public:
       network(), display( true ) /* use TERM environment var to initialize display */, connecting_notification(),
       repaint_requested( false ), lf_entered( false ), quit_sequence_started( false ), clean_shutdown( false ),
       verbose( s_verbose ), reply_filter(), theme_fg(), theme_bg(), theme_scheme( 0 ), last_sent_theme( "", "", 0 ),
-      pending_reply_deadline( 0 )
+      pending_reply_deadline( 0 ), kitty_probe_awaiting_reply( false )
   {
     if ( predict_mode ) {
       if ( !strcmp( predict_mode, "always" ) ) {

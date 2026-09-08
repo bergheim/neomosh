@@ -36,6 +36,7 @@
 #include "src/include/config.h"
 #include "terminaldisplay.h"
 
+#include <random>
 #include <stdexcept>
 #include <string>
 
@@ -80,9 +81,30 @@ static const char* ti_str( const char* capname )
   return val;
 }
 
+/* Draw this Display's Kitty local-id base from std::random_device, in
+   [KITTY_LOCAL_ID_MIN, KITTY_LOCAL_ID_MAX). Some sandboxes make
+   random_device throw (no entropy source available) rather than just
+   producing low-quality randomness; a fixed high value -- still inside the
+   range, so ids allocated from it are indistinguishable from a randomly
+   drawn base's -- is a fine fallback: worse isolation from another
+   process's ids in that one rare case beats refusing to start Kitty
+   graphics at all. */
+static uint32_t pick_kitty_local_id_base( void )
+{
+  static const uint32_t FALLBACK_BASE = 0xF0000000;
+  try {
+    std::random_device rd;
+    std::uniform_int_distribution<uint32_t> dist( KITTY_LOCAL_ID_MIN, KITTY_LOCAL_ID_MAX - 1 );
+    return dist( rd );
+  } catch ( ... ) {
+    return FALLBACK_BASE;
+  }
+}
+
 Display::Display( bool use_environment )
   : has_ech( true ), has_bce( true ), has_title( true ), smcup( NULL ), rmcup( NULL ),
-    graphics_mode( GraphicsMode::NONE )
+    graphics_mode( GraphicsMode::NONE ), kitty_local_ids(), kitty_local_id_base( pick_kitty_local_id_base() ),
+    kitty_next_local_id( 0 ), kitty_uploaded(), kitty_last_image_ids()
 {
   if ( use_environment ) {
     int errret = -2;

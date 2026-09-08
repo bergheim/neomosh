@@ -12,3 +12,4 @@
 *.trs
 /terminal-winops
 /terminal-kitty
+/terminal-kitty-client

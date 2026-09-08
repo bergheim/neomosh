@@ -73,6 +73,18 @@ static const char* const THEME_PROBE = "\033[?2031h\033[?996n\033]10;?\033\\\033
    so the default colours we report follow suit. */
 static const char* const THEME_COLOR_QUERY = "\033]10;?\033\\\033]11;?\033\\";
 
+/* Ask the local terminal whether it supports the Kitty graphics protocol,
+   the same way `kitten icat` itself probes: a direct-transmission query
+   (a=q,t=d) for a throwaway 1x1 RGB image (f=24,s=1,v=1), three zero-byte
+   pixel payload (base64 "AAAA"), tagged with our own private id (i=31) so
+   the reply is unambiguous. No q= key, unlike every other Kitty command
+   this client or server ever sends -- q gates the reply, and here we need
+   one. Sent right after THEME_PROBE, in init() and resume(); the reply is
+   caught by reply_filter same as the theme probe's. A terminal that
+   doesn't understand this at all just leaves it unanswered, same as an
+   unsupported CSI/OSC query. */
+static const char* const KITTY_PROBE = "\033_Ga=q,t=d,f=24,s=1,v=1,i=31;AAAA\033\\";
+
 void STMClient::resume( void )
 {
   /* Restore termios state */
@@ -86,6 +98,27 @@ void STMClient::resume( void )
 
   /* Re-arm theme notifications and re-query the current theme */
   swrite( STDOUT_FILENO, THEME_PROBE );
+
+  /* Re-probe Kitty graphics support: resume() also runs after a roam to a
+     different local terminal (SIGCONT after a suspend, or simply a fresh
+     process on the other end of the same tty), which may not support what
+     the last one did, or may never have heard of the ids we previously
+     uploaded to it. */
+  if ( display.get_graphics_mode() == Terminal::GraphicsMode::KITTY ) {
+    /* Free whatever we uploaded before forgetting we ever did --
+       reset_graphics() below wipes the bookkeeping, and a later repaint's
+       a=d,d=a only clears placements, never image data, so without this
+       every suspend/resume (or roam) would orphan our old images in
+       whatever real terminal we were just attached to. Harmless no-ops if
+       that terminal, or the connection to it, is already gone. */
+    swrite( STDOUT_FILENO, display.kitty_shutdown_sequence().c_str() );
+  }
+  /* Reset next, so a negative or unanswered probe leaves graphics
+     genuinely off rather than stuck in a stale KITTY mode, and a positive
+     one's full repaint re-uploads from scratch. */
+  display.reset_graphics();
+  swrite( STDOUT_FILENO, KITTY_PROBE );
+  kitty_probe_awaiting_reply = true;
 
   /* Flag that outer terminal state is unknown */
   repaint_requested = true;
@@ -137,6 +170,10 @@ void STMClient::init( void )
   /* Ask the local terminal for its light/dark scheme and default colours,
      and ask it to keep us posted on scheme changes. */
   swrite( STDOUT_FILENO, THEME_PROBE );
+
+  /* Ask whether the local terminal speaks Kitty graphics; see KITTY_PROBE. */
+  swrite( STDOUT_FILENO, KITTY_PROBE );
+  kitty_probe_awaiting_reply = true;
 
   /* Add our name to window title */
   if ( !getenv( "MOSH_TITLE_NOPREFIX" ) ) {
@@ -224,6 +261,15 @@ void STMClient::shutdown( void )
   overlays.get_notification_engine().server_heard( timestamp() );
   overlays.set_title_prefix( std::wstring( L"" ) );
   output_new_frame();
+
+  if ( display.get_graphics_mode() == Terminal::GraphicsMode::KITTY ) {
+    /* Free every image and placement this session left on the real
+       terminal -- no image should outlive the session. Kitty's own d=A
+       only reaches images it still has a placement for, so an uploaded
+       image whose placement was separately removed earlier needs its own
+       explicit a=d,d=I too; see Display::kitty_shutdown_sequence. */
+    swrite( STDOUT_FILENO, display.kitty_shutdown_sequence().c_str() );
+  }
 
   /* Restore terminal and terminal-driver state */
   swrite( STDOUT_FILENO, display.close().c_str() );
@@ -462,6 +508,19 @@ bool STMClient::process_user_input( int fd )
       case Terminal::TerminalReplyFilter::Reply::BACKGROUND:
         theme_bg = it->color;
         break;
+      case Terminal::TerminalReplyFilter::Reply::GRAPHICS:
+        /* Whatever it says, the probe is answered: stop granting the
+           longer deadline below. An OK for our own probe id (i=31) turns
+           graphics on and asks for a full repaint to place anything
+           that's already in the remote state; any other text (an error,
+           or someone else's reply) leaves graphics off, silently -- covers
+           local tmux and any terminal that doesn't understand this. */
+        kitty_probe_awaiting_reply = false;
+        if ( it->text.compare( 0, 7, "i=31;OK" ) == 0 ) {
+          display.set_graphics_mode( Terminal::GraphicsMode::KITTY );
+          repaint_requested = true;
+        }
+        break;
     }
   }
   if ( !replies.empty() && !net.shutdown_in_progress() ) {
@@ -472,7 +531,8 @@ bool STMClient::process_user_input( int fd )
     }
   }
 
-  pending_reply_deadline = reply_filter.has_pending() ? timestamp() + 100 : 0;
+  pending_reply_deadline
+    = reply_filter.has_pending() ? timestamp() + ( kitty_probe_awaiting_reply ? 500 : 100 ) : 0;
 
   /* Don't predict for bulk data. */
   bool paste = passthrough.size() > 100;
@@ -586,6 +646,7 @@ bool STMClient::main( void )
         std::string flushed;
         reply_filter.flush( flushed );
         pending_reply_deadline = 0;
+        kitty_probe_awaiting_reply = false; /* giving up counts as answered */
 
         if ( !apply_bytes_to_keystroke_stream( flushed, false ) ) {
           if ( !network->has_remote_addr() ) {

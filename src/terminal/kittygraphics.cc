@@ -427,6 +427,47 @@ std::string base64_decode( const std::string& in )
   return out;
 }
 
+} // namespace
+
+/* Small, self-contained base64 encoder, for the same reason base64_decode
+   above is: pulling src/crypto's implementation into libmoshterminal
+   changes the archive link order in ways that break the test binaries.
+   External linkage (unlike base64_decode): the client Display uploads
+   image bytes through this, from terminaldisplay.cc. */
+std::string Terminal::Kitty::base64_encode( const std::string& in )
+{
+  static const char* table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve( ( in.size() + 2 ) / 3 * 4 );
+  size_t i = 0;
+  while ( i + 3 <= in.size() ) {
+    unsigned int n = ( static_cast<unsigned char>( in[i] ) << 16 )
+                     | ( static_cast<unsigned char>( in[i + 1] ) << 8 ) | static_cast<unsigned char>( in[i + 2] );
+    out.push_back( table[( n >> 18 ) & 0x3F] );
+    out.push_back( table[( n >> 12 ) & 0x3F] );
+    out.push_back( table[( n >> 6 ) & 0x3F] );
+    out.push_back( table[n & 0x3F] );
+    i += 3;
+  }
+  const size_t rem = in.size() - i;
+  if ( rem == 1 ) {
+    unsigned int n = static_cast<unsigned char>( in[i] ) << 16;
+    out.push_back( table[( n >> 18 ) & 0x3F] );
+    out.push_back( table[( n >> 12 ) & 0x3F] );
+    out.append( "==" );
+  } else if ( rem == 2 ) {
+    unsigned int n
+      = ( static_cast<unsigned char>( in[i] ) << 16 ) | ( static_cast<unsigned char>( in[i + 1] ) << 8 );
+    out.push_back( table[( n >> 18 ) & 0x3F] );
+    out.push_back( table[( n >> 12 ) & 0x3F] );
+    out.push_back( table[( n >> 6 ) & 0x3F] );
+    out.push_back( '=' );
+  }
+  return out;
+}
+
+namespace {
+
 uint32_t read_be32( const std::string& data, size_t offset )
 {
   return ( static_cast<uint32_t>( static_cast<unsigned char>( data[offset] ) ) << 24 )

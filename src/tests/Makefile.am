@@ -39,8 +39,8 @@ displaytests = \
 	unicode-later-combining.test \
 	window-resize.test
 
-check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale terminal-theme terminal-winops terminal-reply-filter terminal-kitty
-TESTS = ocb-aes encrypt-decrypt base64 nonce-incr terminal-theme terminal-winops terminal-reply-filter terminal-kitty local.test $(displaytests)
+check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale terminal-theme terminal-winops terminal-reply-filter terminal-kitty terminal-kitty-client
+TESTS = ocb-aes encrypt-decrypt base64 nonce-incr terminal-theme terminal-winops terminal-reply-filter terminal-kitty terminal-kitty-client local.test $(displaytests)
 XFAIL_TESTS = \
 	e2e-failure.test \
 	emulation-attributes-256color8.test
@@ -88,6 +88,10 @@ terminal_reply_filter_LDADD = ../terminal/libmoshterminal.a ../util/libmoshutil.
 terminal_kitty_SOURCES = terminal-kitty.cc
 terminal_kitty_CPPFLAGS = -I$(srcdir)/../statesync -I$(srcdir)/../terminal -I$(srcdir)/../protobufs $(protobuf_CFLAGS)
 terminal_kitty_LDADD = ../statesync/libmoshstatesync.a ../terminal/libmoshterminal.a ../protobufs/libmoshprotos.a ../util/libmoshutil.a $(protobuf_LIBS) $(TINFO_LIBS)
+
+terminal_kitty_client_SOURCES = terminal-kitty-client.cc
+terminal_kitty_client_CPPFLAGS = -I$(srcdir)/../statesync -I$(srcdir)/../terminal -I$(srcdir)/../protobufs $(protobuf_CFLAGS)
+terminal_kitty_client_LDADD = ../statesync/libmoshstatesync.a ../terminal/libmoshterminal.a ../protobufs/libmoshprotos.a ../util/libmoshutil.a $(protobuf_LIBS) $(TINFO_LIBS)
 
 clean-local: clean-local-check
 .PHONY: clean-local-check

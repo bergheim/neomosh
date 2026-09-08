@@ -52,6 +52,7 @@ void TerminalReplyFilter::reset_accumulators( void )
   rgb_r_.clear();
   rgb_g_.clear();
   rgb_b_.clear();
+  graphics_text_.clear();
 }
 
 void TerminalReplyFilter::flush( std::string& passthrough )
@@ -93,6 +94,9 @@ void TerminalReplyFilter::process_byte( unsigned char c, std::string& passthroug
       } else if ( c == ']' ) {
         held_.push_back( char( c ) );
         state_ = OSC_NUM1;
+      } else if ( c == '_' ) {
+        held_.push_back( char( c ) );
+        state_ = APC_G;
       } else {
         mismatch( c, passthrough );
       }
@@ -253,6 +257,50 @@ void TerminalReplyFilter::process_byte( unsigned char c, std::string& passthroug
         r.kind = osc_kind_;
         r.color = rgb_r_ + "/" + rgb_g_ + "/" + rgb_b_;
         r.scheme = 0;
+        replies_.push_back( r );
+        held_.clear();
+        reset_accumulators();
+        state_ = GROUND;
+      } else {
+        mismatch( c, passthrough );
+      }
+      break;
+
+    case APC_G:
+      if ( c == 'G' ) {
+        held_.push_back( char( c ) );
+        graphics_text_.clear();
+        state_ = APC_TEXT;
+      } else {
+        mismatch( c, passthrough );
+      }
+      break;
+
+    case APC_TEXT:
+      if ( c == 0x1b ) {
+        held_.push_back( char( c ) );
+        state_ = APC_TERM_ESC;
+      } else if ( c == 0x9c ) {
+        held_.push_back( char( c ) );
+        Reply r;
+        r.kind = Reply::GRAPHICS;
+        r.text = graphics_text_;
+        replies_.push_back( r );
+        held_.clear();
+        reset_accumulators();
+        state_ = GROUND;
+      } else {
+        held_.push_back( char( c ) );
+        graphics_text_.push_back( char( c ) );
+      }
+      break;
+
+    case APC_TERM_ESC:
+      if ( c == '\\' ) {
+        held_.push_back( char( c ) );
+        Reply r;
+        r.kind = Reply::GRAPHICS;
+        r.text = graphics_text_;
         replies_.push_back( r );
         held_.clear();
         reset_accumulators();

@@ -222,7 +222,7 @@ static void test_flush_releases_partial_prefix( void )
   expect_eq( name, "reply count", replies.size(), 0 );
 }
 
-/* More than 64 held bytes forces an automatic flush. */
+/* More than MAX_HELD (256) held bytes forces an automatic flush. */
 static void test_cap_forces_flush( void )
 {
   const std::string name = "cap_forces_flush";
@@ -230,7 +230,7 @@ static void test_cap_forces_flush( void )
   std::string passthrough;
 
   std::string input = "\033[?997;";
-  input.append( 70, '1' ); /* never-ending digit run: no terminator seen */
+  input.append( 300, '1' ); /* never-ending digit run: no terminator seen */
 
   f.feed( input, passthrough );
 
@@ -241,6 +241,63 @@ static void test_cap_forces_flush( void )
 
   /* Nothing must be lost or reordered: draining what's held plus what has
      already leaked to passthrough must reproduce the original input. */
+  std::string remaining;
+  f.flush( remaining );
+  expect_eq( name, "reassembled input", passthrough + remaining, input );
+}
+
+/* A Kitty graphics probe reply (ESC _ G ... ESC \), ST-terminated,
+   interleaved with keystrokes: captured as one GRAPHICS reply with the
+   text between "G" and ST, and the surrounding keystrokes pass through
+   unchanged and in order. */
+static void test_graphics_reply_st( void )
+{
+  const std::string name = "graphics_reply_st";
+  TerminalReplyFilter f;
+  std::string passthrough;
+  f.feed( "ab\033_Gi=31;OK\033\\cd", passthrough );
+
+  expect_eq( name, "passthrough", passthrough, "abcd" );
+  std::vector<Reply> replies = f.take_replies();
+  expect_eq( name, "reply count", replies.size(), 1 );
+  expect( name, replies.at( 0 ).kind == Reply::GRAPHICS, "wrong kind" );
+  expect_eq( name, "text", replies.at( 0 ).text, "i=31;OK" );
+  expect( name, !f.has_pending(), "should have no pending bytes" );
+}
+
+/* Same reply, terminated with the single-byte C1 ST (0x9C) instead of
+   ESC \. */
+static void test_graphics_reply_c1_st( void )
+{
+  const std::string name = "graphics_reply_c1_st";
+  TerminalReplyFilter f;
+  std::string passthrough;
+  f.feed( "\033_Gi=31;OK\x9c", passthrough );
+
+  expect_eq( name, "passthrough", passthrough, "" );
+  std::vector<Reply> replies = f.take_replies();
+  expect_eq( name, "reply count", replies.size(), 1 );
+  expect( name, replies.at( 0 ).kind == Reply::GRAPHICS, "wrong kind" );
+  expect_eq( name, "text", replies.at( 0 ).text, "i=31;OK" );
+  expect( name, !f.has_pending(), "should have no pending bytes" );
+}
+
+/* An ESC _ G reply that never terminates is released as ordinary input
+   once it grows past MAX_HELD (256) bytes, same as the CSI cap test. */
+static void test_graphics_reply_cap_forces_flush( void )
+{
+  const std::string name = "graphics_reply_cap_forces_flush";
+  TerminalReplyFilter f;
+  std::string passthrough;
+
+  std::string input = "\033_G";
+  input.append( 300, 'x' ); /* never-ending payload: no terminator seen */
+
+  f.feed( input, passthrough );
+
+  expect( name, !passthrough.empty(), "expected some bytes to have been flushed by the cap" );
+  expect_eq( name, "reply count", f.take_replies().size(), 0 );
+
   std::string remaining;
   f.flush( remaining );
   expect_eq( name, "reassembled input", passthrough + remaining, input );
@@ -258,6 +315,9 @@ int main( void )
   test_malformed_color();
   test_flush_releases_partial_prefix();
   test_cap_forces_flush();
+  test_graphics_reply_st();
+  test_graphics_reply_c1_st();
+  test_graphics_reply_cap_forces_flush();
 
   printf( "PASS\n" );
   return 0;

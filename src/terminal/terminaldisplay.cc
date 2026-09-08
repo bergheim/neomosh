@@ -30,7 +30,9 @@
     also delete it here.
 */
 
+#include <algorithm>
 #include <cstdio>
+#include <set>
 
 #include "src/terminal/terminalframebuffer.h"
 #include "terminaldisplay.h"
@@ -57,6 +59,25 @@ std::string Display::close() const
                       "\033[?1015l\033[?1006l\033[?1005l"
                       "\033[?2031l" )
          + std::string( rmcup ? rmcup : "" );
+}
+
+void Display::reset_graphics( void )
+{
+  graphics_mode = GraphicsMode::NONE;
+  kitty_local_ids.clear();
+  kitty_uploaded.clear();
+  kitty_last_image_ids.clear();
+}
+
+std::string Display::kitty_shutdown_sequence( void ) const
+{
+  std::string out = "\033_Ga=d,d=A,q=2\033\\";
+  for ( uint32_t local_id : kitty_uploaded ) {
+    out += "\033_Ga=d,d=I,i=";
+    out += std::to_string( local_id );
+    out += ",q=2\033\\";
+  }
+  return out;
 }
 
 std::string Display::new_frame( bool initialized, const Framebuffer& last, const Framebuffer& f ) const
@@ -128,6 +149,15 @@ std::string Display::new_frame( bool initialized, const Framebuffer& last, const
 
     /* clear screen */
     frame.append( "\033[0m\033[H\033[2J" );
+    if ( graphics_mode == GraphicsMode::KITTY ) {
+      /* Mosh's repaint above doesn't remove Kitty images, so every full
+         repaint starts by wiping every placement the real terminal has;
+         kitty_prepare_frame (below, before the per-row loop) then
+         re-queues everything currently live to be placed again. The
+         image bytes themselves aren't freed (d=a, not d=A), so nothing
+         needs re-uploading. */
+      frame.append( "\033_Ga=d,d=a,q=2\033\\" );
+    }
     initialized = false;
     frame.cursor_x = frame.cursor_y = 0;
     frame.current_rendition = initial_rendition();
@@ -250,6 +280,15 @@ std::string Display::new_frame( bool initialized, const Framebuffer& last, const
     }
   }
 
+  if ( graphics_mode == GraphicsMode::KITTY ) {
+    /* Must run before put_row is called for any row: emits a=d,d=I for
+       images gone from the store, and seeds placements that need
+       (re-)placing but that put_row's own per-row uid-diff can never
+       discover on its own. `initialized` here is the same local, possibly
+       just-forced-false, value the per-row loop below uses. */
+    kitty_prepare_frame( frame, f, initialized );
+  }
+
   /* Now update the display, row by row */
   bool wrap = false;
   for ( ; frame_y < f.ds.get_height(); frame_y++ ) {
@@ -263,6 +302,8 @@ std::string Display::new_frame( bool initialized, const Framebuffer& last, const
        restores it to what f.ds actually expects, same as it always does
        for ordinary cell writes. */
     flush_placement_diffs( frame );
+  } else if ( graphics_mode == GraphicsMode::KITTY ) {
+    flush_kitty_placement_diffs( frame, f );
   }
 
   /* has cursor location changed? */
@@ -424,6 +465,200 @@ void Display::flush_placement_diffs( FrameState& frame ) const
   frame.kitty_additions.clear();
 }
 
+uint32_t Display::kitty_local_id_lookup( uint32_t internal_id ) const
+{
+  auto it = kitty_local_ids.find( internal_id );
+  return ( it != kitty_local_ids.end() ) ? it->second : 0;
+}
+
+uint32_t Display::kitty_local_id_for( uint32_t internal_id ) const
+{
+  const uint32_t existing = kitty_local_id_lookup( internal_id );
+  if ( existing != 0 ) {
+    return existing;
+  }
+  /* base and the running offset are both already within [0, RANGE) of
+     their own reference point, so their sum needs at most one wrap. */
+  const uint32_t offset
+    = ( ( kitty_local_id_base - KITTY_LOCAL_ID_MIN ) + kitty_next_local_id ) % KITTY_LOCAL_ID_RANGE;
+  kitty_next_local_id = ( kitty_next_local_id + 1 ) % KITTY_LOCAL_ID_RANGE;
+  const uint32_t local_id = KITTY_LOCAL_ID_MIN + offset;
+  kitty_local_ids[internal_id] = local_id;
+  return local_id;
+}
+
+void Display::kitty_upload_image( FrameState& frame, uint32_t local_id, const Image& image ) const
+{
+  const std::string b64 = Kitty::base64_encode( image.blob ? *image.blob : std::string() );
+  const size_t CHUNK_CHARS = 4096;
+  size_t pos = 0;
+  do {
+    const size_t take = std::min( CHUNK_CHARS, b64.size() - pos );
+    const bool last_chunk = ( pos + take >= b64.size() );
+
+    frame.append( "\033_Ga=t,i=" );
+    frame.append_string( std::to_string( local_id ) );
+    frame.append( ",f=" );
+    frame.append_string( std::to_string( image.format ) );
+    frame.append( ",s=" );
+    frame.append_string( std::to_string( image.width ) );
+    frame.append( ",v=" );
+    frame.append_string( std::to_string( image.height ) );
+    if ( image.compressed ) {
+      frame.append( ",o=z" );
+    }
+    frame.append( ",q=2,m=" );
+    frame.append( last_chunk ? '0' : '1' );
+    frame.append( ';' );
+    frame.append_string( b64.substr( pos, take ) );
+    frame.append( "\033\\" );
+
+    pos += take;
+  } while ( pos < b64.size() );
+}
+
+/* See the declaration in terminaldisplay.h for the full rationale; this
+   only walks the mechanics. */
+void Display::kitty_prepare_frame( FrameState& frame, const Framebuffer& f, bool initialized ) const
+{
+  std::set<uint32_t> current_ids;
+  for ( const auto& kv : f.get_kitty_images() ) {
+    current_ids.insert( kv.first );
+  }
+
+  for ( uint32_t old_id : kitty_last_image_ids ) {
+    if ( current_ids.count( old_id ) ) {
+      continue;
+    }
+    auto it = kitty_local_ids.find( old_id );
+    if ( it == kitty_local_ids.end() ) {
+      continue; /* never sent to the real terminal; nothing to forget */
+    }
+    frame.append( "\033_Ga=d,d=I,i=" );
+    frame.append_string( std::to_string( it->second ) );
+    frame.append( ",q=2\033\\" );
+    kitty_uploaded.erase( it->second );
+    kitty_local_ids.erase( it );
+  }
+  kitty_last_image_ids = current_ids;
+
+  if ( !initialized ) {
+    /* Full repaint: a=d,d=a (emitted just above this call, in new_frame)
+       already wiped every placement from the real terminal, so every
+       currently-live placement must be reasserted -- regardless of
+       whether it also existed, unchanged, on `last`. put_row's own
+       per-row diffing is skipped for KITTY mode on this pass (see
+       put_row), so nothing gets queued twice. */
+    for ( int row = 0; row < f.ds.get_height(); row++ ) {
+      for ( const auto& p : f.get_row( row )->placements ) {
+        frame.kitty_additions.emplace_back( row, p );
+      }
+    }
+    return;
+  }
+
+  for ( const auto& kv : f.get_kitty_images() ) {
+    const uint32_t internal_id = kv.first;
+    const Image& image = *kv.second;
+    if ( !image.blob ) {
+      continue; /* still incomplete; nothing to show yet */
+    }
+    const std::shared_ptr<const Image> prev = frame.last_frame.image_store_get( internal_id );
+    if ( prev && prev->blob ) {
+      continue; /* was already complete last frame */
+    }
+
+    for ( int row = 0; row < f.ds.get_height(); row++ ) {
+      const Row* old_row_ptr
+        = ( row < frame.last_frame.ds.get_height() ) ? frame.last_frame.get_row( row ) : nullptr;
+      for ( const auto& p : f.get_row( row )->placements ) {
+        if ( p->internal_image_id != internal_id ) {
+          continue;
+        }
+        bool existed_before = false;
+        if ( old_row_ptr ) {
+          for ( const auto& op : old_row_ptr->placements ) {
+            if ( op->uid == p->uid ) {
+              existed_before = true;
+              break;
+            }
+          }
+        }
+        if ( existed_before ) {
+          /* Was already on this row last frame too (uid unchanged); an
+             ordinary uid-diff would never flag it, since it never
+             appeared or disappeared -- only its image's completeness did. */
+          frame.kitty_additions.emplace_back( row, p );
+        }
+        /* else: brand new this frame as well as already complete;
+           put_row's ordinary per-row diff will pick it up on its own. */
+      }
+    }
+  }
+}
+
+void Display::flush_kitty_placement_diffs( FrameState& frame, const Framebuffer& f ) const
+{
+  for ( const auto& p : frame.kitty_removals ) {
+    /* Non-allocating: when the image vanished from the store in this same
+       frame, kitty_prepare_frame already erased this mapping (and sent
+       a=d,d=I for it) before put_row ever found the placement gone. The
+       real terminal was never told to place anything under a fresh id, so
+       there is nothing to delete and nothing to allocate one for. */
+    const uint32_t local_id = kitty_local_id_lookup( p->internal_image_id );
+    if ( local_id == 0 ) {
+      continue;
+    }
+    frame.append( "\033_Ga=d,d=i,i=" );
+    frame.append_string( std::to_string( local_id ) );
+    frame.append( ",p=" );
+    frame.append_string( std::to_string( p->uid ) );
+    frame.append( ",q=2\033\\" );
+  }
+
+  for ( const auto& entry : frame.kitty_additions ) {
+    const int frame_y = entry.first;
+    const std::shared_ptr<const ImagePlacement>& p = entry.second;
+
+    const std::shared_ptr<const Image> image = f.image_store_get( p->internal_image_id );
+    if ( !image || !image->blob ) {
+      continue; /* bytes still incomplete; nothing to show yet */
+    }
+
+    const uint32_t local_id = kitty_local_id_for( p->internal_image_id );
+    if ( kitty_uploaded.find( local_id ) == kitty_uploaded.end() ) {
+      kitty_upload_image( frame, local_id, *image );
+      kitty_uploaded.insert( local_id );
+    }
+
+    frame.append_silent_move( frame_y, p->column );
+    frame.append( "\033_Ga=p,i=" );
+    frame.append_string( std::to_string( local_id ) );
+    frame.append( ",p=" );
+    frame.append_string( std::to_string( p->uid ) );
+    frame.append( ",c=" );
+    frame.append_string( std::to_string( p->columns ) );
+    frame.append( ",r=" );
+    frame.append_string( std::to_string( p->rows ) );
+    frame.append( ",z=" );
+    frame.append_string( std::to_string( p->z ) );
+    if ( p->has_src_rect ) {
+      frame.append( ",x=" );
+      frame.append_string( std::to_string( p->src_x ) );
+      frame.append( ",y=" );
+      frame.append_string( std::to_string( p->src_y ) );
+      frame.append( ",w=" );
+      frame.append_string( std::to_string( p->src_w ) );
+      frame.append( ",h=" );
+      frame.append_string( std::to_string( p->src_h ) );
+    }
+    frame.append( ",C=1,q=2\033\\" );
+  }
+
+  frame.kitty_removals.clear();
+  frame.kitty_additions.clear();
+}
+
 bool Display::put_row( bool initialized,
                        FrameState& frame,
                        const Framebuffer& f,
@@ -453,7 +688,13 @@ bool Display::put_row( bool initialized,
     return false;
   }
 
-  if ( graphics_mode == GraphicsMode::WIRE ) {
+  /* KITTY mode skips this on a full repaint (initialized false):
+     kitty_prepare_frame has already unconditionally queued every current
+     placement in that case, since a=d,d=a just cleared them all from the
+     real terminal regardless of whether this row's own uid-diff would
+     otherwise see anything "new". Running it anyway would queue the same
+     placement a second time. */
+  if ( graphics_mode == GraphicsMode::WIRE || ( graphics_mode == GraphicsMode::KITTY && initialized ) ) {
     record_placement_diff( frame, frame_y, old_row.placements, row.placements );
   }
 

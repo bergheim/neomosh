@@ -144,6 +144,11 @@ struct ChunkState
    is still present; this function strips it). Returns the full escape-
    sequence reply to send back to the host, or "" for no reply. */
 std::string handle_apc( const std::string& payload, Framebuffer* fb, ChunkState* chunk );
+
+/* Small, self-contained base64 encoder, paired with the decoder next to it
+   in kittygraphics.cc. Used by the client Display (terminaldisplay.cc) to
+   upload Kitty image bytes to the real local terminal. */
+std::string base64_encode( const std::string& in );
 }
 }
 
