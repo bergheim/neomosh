@@ -250,9 +250,18 @@ Depends on the pixel window size task. The OOB channel is not a prerequisite: im
 :END:
 Upstream issues with no PR that fit neomosh once the above lands. Server-side synchronized output DEC mode 2026 (#1312): batch a remote app's update region into one diff, with a timeout, size limit and recovery from an unterminated update; the client-side half is its own task. OSC 133 shell integration marks (#1385). OSC 4 palette get and set (#1350). Kitty keyboard protocol (CSI u, no upstream issue): the app enables it on the server pty but keys are encoded on the client tty, so it is server-to-client signalling with mode lifecycle, negotiation and prediction handling, not a pass-through. Scrollback (#122, 276 votes) is out of scope.
 
-* TODO Pixel window size over the wire and XTWINOPS 14 and 16  :terminal:graphics:resize:
+* DONE Pixel window size over the wire and XTWINOPS 14 and 16 :terminal:graphics:resize:
+CLOSED: [2026-09-08 Tue 16:05]
 :PROPERTIES:
 :ID:       20260908T153323Z-d80c57
 :CREATED:  [2026-09-08 Tue 15:33]
+:LAST_AGENT: claude/claude-fable-5-1 (xhigh)
+:END:
+:LOGBOOK:
+- State "DONE"       from "INPROGRESS" [2026-09-08 Tue 16:05] \\
+  Landed on master as fb52200. Reviewed by Codex (merge) and Grok (merge; its two-argument-resize finding fixed by making omitted pixel arguments keep the current value). make check 35 tests, 33 pass, 2 XFAIL. Host verification still open: CSI 14 t over mosh into Ghostty and kitten icat --detect-support.
+- Session claude/claude-fable-5-1 (xhigh) 6ca74d42-95eb-4c5e-9c57-37f750ceba9e [2026-09-08 Tue 16:05]
+- State "INPROGRESS" from "TODO"       [2026-09-08 Tue 15:34]
+- Session claude/claude-fable-5-1 (xhigh) 6ca74d42-95eb-4c5e-9c57-37f750ceba9e [2026-09-08 Tue 15:34]
 :END:
 Prerequisite for Kitty graphics and for timg, chafa, yazi and image.nvim: kitten icat exits when TIOCGWINSZ reports zero pixels, and mosh forwards only rows and columns. Client forwards ws_xpixel and ws_ypixel in the resize user event (userinput.proto ResizeMessage, Parser::Resize, UserStream diff_from and apply_string, stmclient main_init and process_resize); mosh-server sets them before TIOCSWINSZ; Emulator::resize keeps them in DrawState with cell size accessors, excluded from DrawState::operator== so a pixel-only SIGWINCH does not create an empty state; validate bounds like width and height. New CSI t handler answers XTWINOPS 14 (window pixels) and 16 (cell pixels), silent when unknown, via terminal_to_host like CSI_DSR. Unit test terminal-winops registered like terminal_theme in src/tests/Makefile.am. Upstream has no issue or PR for this. Test on the host: printf CSI 14 t over mosh into Ghostty reads back a pixel size and kitten icat --detect-support no longer fails on pixel size.
