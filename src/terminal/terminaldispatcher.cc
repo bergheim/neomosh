@@ -45,8 +45,9 @@ using namespace Terminal;
 static const size_t MAXIMUM_CLIPBOARD_SIZE = 16 * 1024;
 
 Dispatcher::Dispatcher()
-  : params(), parsed_params(), parsed( false ), dispatch_chars(), OSC_string(), terminal_to_host(),
-    theme_foreground(), theme_background(), theme_scheme( 0 ), color_scheme_notify( false )
+  : params(), parsed_params(), parsed( false ), dispatch_chars(), OSC_string(), APC_string(), APC_overflow( false ),
+    kitty_chunk(), terminal_to_host(), theme_foreground(), theme_background(), theme_scheme( 0 ),
+    color_scheme_notify( false )
 {}
 
 void Dispatcher::set_theme( const std::string& foreground, const std::string& background, int scheme )
@@ -266,9 +267,46 @@ void Dispatcher::OSC_start( const Parser::OSC_Start* act __attribute( ( unused )
   OSC_string.clear();
 }
 
+void Dispatcher::APC_put( const Parser::APC_Put* act )
+{
+  assert( act->char_present );
+  if ( APC_overflow ) {
+    return;
+  }
+  if ( APC_string.size() >= APC_MAXIMUM_SIZE ) {
+    /* discard the whole APC silently on overflow */
+    APC_overflow = true;
+    APC_string.clear();
+    return;
+  }
+  APC_string.push_back( static_cast<char>( act->ch ) );
+}
+
+void Dispatcher::APC_start( const Parser::APC_Start* act __attribute( ( unused ) ) )
+{
+  APC_string.clear();
+  APC_overflow = false;
+}
+
+void Dispatcher::APC_dispatch( const Parser::APC_End* act __attribute( ( unused ) ), Framebuffer* fb )
+{
+  if ( APC_overflow ) {
+    APC_overflow = false;
+    return;
+  }
+
+  if ( !APC_string.empty() && APC_string[0] == 'G' ) {
+    std::string reply = Kitty::handle_apc( APC_string, fb, &kitty_chunk );
+    if ( !reply.empty() ) {
+      terminal_to_host.append( reply );
+    }
+  }
+}
+
 bool Dispatcher::operator==( const Dispatcher& x ) const
 {
   return ( params == x.params ) && ( parsed_params == x.parsed_params ) && ( parsed == x.parsed )
          && ( dispatch_chars == x.dispatch_chars ) && ( OSC_string == x.OSC_string )
+         && ( APC_string == x.APC_string ) && ( APC_overflow == x.APC_overflow )
          && ( terminal_to_host == x.terminal_to_host );
 }

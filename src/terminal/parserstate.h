@@ -128,6 +128,12 @@ class SOS_PM_APC_String : public State
 {
   Transition input_state_rule( wchar_t ch ) const;
 };
+class APC_String : public State
+{
+  ActionPointer enter( void ) const;
+  Transition input_state_rule( wchar_t ch ) const;
+  ActionPointer exit( void ) const;
+};
 }
 
 #endif

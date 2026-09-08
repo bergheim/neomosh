@@ -11,3 +11,4 @@
 *.log
 *.trs
 /terminal-winops
+/terminal-kitty

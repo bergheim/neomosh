@@ -37,6 +37,8 @@
 #include <string>
 #include <vector>
 
+#include "kittygraphics.h"
+
 namespace Parser {
 class Action;
 class Param;
@@ -48,6 +50,9 @@ class Execute;
 class OSC_Start;
 class OSC_Put;
 class OSC_End;
+class APC_Start;
+class APC_Put;
+class APC_End;
 }
 
 namespace Terminal {
@@ -97,11 +102,25 @@ private:
   std::string dispatch_chars;
   std::vector<wchar_t> OSC_string;
 
+  /* Buffered payload of the APC string currently being parsed (ESC _ ... ST).
+     Capped at APC_MAXIMUM_SIZE bytes; on overflow the whole APC is discarded
+     silently, matching the OSC buffer's semantics of staying outside
+     synchronised state (see terminalframebuffer.h for where the completed
+     Kitty graphics command actually lands). */
+  std::string APC_string;
+  bool APC_overflow;
+
+  /* The m=1 chunk accumulator for the Kitty graphics module. Lives here, not
+     in the Framebuffer, for the same reason as APC_string above. */
+  Kitty::ChunkState kitty_chunk;
+
   void parse_params( void );
 
 public:
   static const int PARAM_MAX = 65535;
   /* prevent evil escape sequences from causing long loops */
+
+  static const size_t APC_MAXIMUM_SIZE = 8192;
 
   std::string terminal_to_host; /* this is the reply string */
 
@@ -130,6 +149,10 @@ public:
   void OSC_put( const Parser::OSC_Put* act );
   void OSC_start( const Parser::OSC_Start* act );
   void OSC_dispatch( const Parser::OSC_End* act, Framebuffer* fb );
+
+  void APC_put( const Parser::APC_Put* act );
+  void APC_start( const Parser::APC_Start* act );
+  void APC_dispatch( const Parser::APC_End* act, Framebuffer* fb );
 
   bool operator==( const Dispatcher& x ) const;
 };

@@ -38,10 +38,13 @@
 #include <cstdint>
 #include <deque>
 #include <list>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "kittygraphics.h"
 
 /* Terminal framebuffer */
 
@@ -250,6 +253,13 @@ public:
   // in scrolling.
   uint64_t gen;
 
+  /* Kitty graphics placements anchored on this row (this row is their top
+     row). Metadata only -- the pixel data lives in the Framebuffer's image
+     store. Cleared by reset() (CSI ED/EL use it) and dropped for free when
+     the row scrolls off the top of the screen, since it just rides along
+     with the shared_ptr<Row>. */
+  std::vector<std::shared_ptr<const ImagePlacement>> placements;
+
 private:
   Row();
 
@@ -261,7 +271,7 @@ public:
 
   void reset( color_type background_color );
 
-  bool operator==( const Row& x ) const { return ( gen == x.gen && cells == x.cells ); }
+  bool operator==( const Row& x ) const;
 
   bool get_wrap( void ) const { return cells.back().get_wrap(); }
   void set_wrap( bool w ) { cells.back().set_wrap( w ); }
@@ -426,6 +436,19 @@ private:
   unsigned int bell_count;
   bool title_initialized; /* true if the window title has been set via an OSC */
 
+  /* Kitty graphics image store: opaque blobs keyed by an immutable internal
+     id, plus a map from the app-visible id (`i=`) to the current internal
+     id for that app id, and a map from the client's image number (`I=`) to
+     the current internal id for that number. Part of synchronised state. */
+  std::map<uint32_t, std::shared_ptr<const Image>> kitty_images;
+  std::map<uint32_t, uint32_t> kitty_app_id_to_internal;
+  std::map<uint32_t, uint32_t> kitty_number_to_internal;
+  uint32_t kitty_next_internal_id;
+  /* Counter for app ids the server allocates on behalf of a client that
+     transmits with I= and no i=; starts at 0x80000000 to stay clear of the
+     32-bit space a client would plausibly pick for its own i= values. */
+  uint32_t kitty_next_number_app_id;
+
   row_pointer newrow( void )
   {
     const size_t w = ds.get_width();
@@ -490,6 +513,53 @@ public:
   void apply_renditions_to_cell( Cell* cell );
   void apply_hyperlink_to_cell( Cell* cell );
 
+  /* Kitty graphics: image store. Used only by src/terminal/kittygraphics.cc. */
+  /* Store a new image, returning its internal id. If app_id is nonzero and
+     an image is already mapped to it, that old image's placements are
+     dropped and its data freed (re-transmit semantics). */
+  uint32_t image_store_put( uint32_t app_id,
+                            int format,
+                            int width,
+                            int height,
+                            bool compressed,
+                            std::shared_ptr<const std::string> blob );
+  std::shared_ptr<const Image> image_store_get( uint32_t internal_id ) const;
+  uint32_t image_store_resolve( uint32_t app_id ) const; /* app id -> internal id, 0 if unknown */
+  size_t image_store_bytes( void ) const;
+  size_t image_store_count( void ) const { return kitty_images.size(); }
+  /* Make room for incoming_bytes plus one more image, evicting the oldest
+     unplaced images first. If replacing_app_id is nonzero and already maps
+     to a stored image, that image's bytes and slot are credited back (a
+     re-transmit of the same id is a swap, not a net addition) before
+     deciding whether eviction is needed. Returns false (nothing evicted
+     further, nothing to change) if it still would not fit. */
+  bool image_store_make_room( uint32_t replacing_app_id, size_t incoming_bytes );
+  /* Drop an image's data and its app-id mapping (placements are untouched;
+     callers that also want placements gone call delete_placements_of_image
+     first). */
+  void image_store_forget( uint32_t internal_id );
+
+  /* Kitty graphics image numbers (`I=`): a server-allocated app id for a
+     transmit that gave I but no i, and the number -> internal id map that
+     a=p/a=d resolve through. Returns 0 (reply ENOSPC) if every id in the
+     server-allocated range is already taken by an app-chosen i=. */
+  uint32_t kitty_allocate_app_id_for_number( void );
+  uint32_t image_store_resolve_number( uint32_t number ) const;         /* number -> internal id, 0 if unknown */
+  void image_store_set_number( uint32_t number, uint32_t internal_id ); /* latest wins */
+
+  /* Test-only override of the total store cap (default 32 MiB). Never called
+     by production code. */
+  static void set_kitty_store_cap_for_tests( size_t bytes );
+
+  /* Kitty graphics: placements, stored on their anchor Row. */
+  void add_placement( int row, std::shared_ptr<const ImagePlacement> placement );
+  bool image_has_placement( uint32_t internal_id ) const;
+  bool placement_exists( uint32_t internal_id, uint32_t placement_id ) const;
+  size_t placement_count( void ) const;
+  void delete_placements_of_image( uint32_t internal_id );
+  void delete_placement_by_id( uint32_t internal_id, uint32_t placement_id );
+  void clear_all_placements( bool free_data );
+
   void insert_line( int before_row, int count );
   void delete_line( int row, int count );
 
@@ -521,7 +591,9 @@ public:
   bool operator==( const Framebuffer& x ) const
   {
     return ( rows == x.rows ) && ( window_title == x.window_title ) && ( clipboard == x.clipboard )
-           && ( bell_count == x.bell_count ) && ( ds == x.ds );
+           && ( bell_count == x.bell_count ) && ( ds == x.ds ) && ( kitty_images == x.kitty_images )
+           && ( kitty_app_id_to_internal == x.kitty_app_id_to_internal )
+           && ( kitty_number_to_internal == x.kitty_number_to_internal );
   }
 };
 }

@@ -30,6 +30,7 @@
     also delete it here.
 */
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -72,9 +73,12 @@ DrawState::DrawState( int s_width, int s_height, int s_xpixel, int s_ypixel )
   reinitialize_tabs( 0 );
 }
 
+static const uint32_t KITTY_NUMBER_APP_ID_BASE = 0x80000000;
+
 Framebuffer::Framebuffer( int s_width, int s_height )
-  : rows(), icon_name(), window_title(), clipboard(), bell_count( 0 ), title_initialized( false ),
-    ds( s_width, s_height )
+  : rows(), icon_name(), window_title(), clipboard(), bell_count( 0 ), title_initialized( false ), kitty_images(),
+    kitty_app_id_to_internal(), kitty_number_to_internal(), kitty_next_internal_id( 1 ),
+    kitty_next_number_app_id( KITTY_NUMBER_APP_ID_BASE ), ds( s_width, s_height )
 {
   assert( s_height > 0 );
   assert( s_width > 0 );
@@ -86,7 +90,10 @@ Framebuffer::Framebuffer( int s_width, int s_height )
 Framebuffer::Framebuffer( const Framebuffer& other )
   : rows( other.rows ), icon_name( other.icon_name ), window_title( other.window_title ),
     clipboard( other.clipboard ), bell_count( other.bell_count ), title_initialized( other.title_initialized ),
-    ds( other.ds )
+    kitty_images( other.kitty_images ), kitty_app_id_to_internal( other.kitty_app_id_to_internal ),
+    kitty_number_to_internal( other.kitty_number_to_internal ),
+    kitty_next_internal_id( other.kitty_next_internal_id ),
+    kitty_next_number_app_id( other.kitty_next_number_app_id ), ds( other.ds )
 {}
 
 Framebuffer& Framebuffer::operator=( const Framebuffer& other )
@@ -98,6 +105,11 @@ Framebuffer& Framebuffer::operator=( const Framebuffer& other )
     clipboard = other.clipboard;
     bell_count = other.bell_count;
     title_initialized = other.title_initialized;
+    kitty_images = other.kitty_images;
+    kitty_app_id_to_internal = other.kitty_app_id_to_internal;
+    kitty_number_to_internal = other.kitty_number_to_internal;
+    kitty_next_internal_id = other.kitty_next_internal_id;
+    kitty_next_number_app_id = other.kitty_next_number_app_id;
     ds = other.ds;
   }
   return *this;
@@ -350,7 +362,7 @@ void Framebuffer::delete_line( int row, int count )
 }
 
 Row::Row( const size_t s_width, const color_type background_color )
-  : cells( s_width, Cell( background_color ) ), gen( get_gen() )
+  : cells( s_width, Cell( background_color ) ), gen( get_gen() ), placements()
 {}
 
 uint64_t Row::get_gen() const
@@ -385,9 +397,14 @@ void Framebuffer::reset( void )
 {
   int width = ds.get_width(), height = ds.get_height();
   ds = DrawState( width, height );
-  rows = rows_type( height, newrow() );
+  rows = rows_type( height, newrow() ); /* fresh rows carry no placements */
   window_title.clear();
   clipboard.clear();
+  kitty_images.clear();
+  kitty_app_id_to_internal.clear();
+  kitty_number_to_internal.clear();
+  kitty_next_internal_id = 1;
+  kitty_next_number_app_id = KITTY_NUMBER_APP_ID_BASE;
   /* do not reset bell_count */
 }
 
@@ -644,6 +661,26 @@ void Row::reset( color_type background_color )
   for ( cells_type::iterator i = cells.begin(); i != cells.end(); i++ ) {
     i->reset( background_color );
   }
+  placements.clear();
+}
+
+static bool placements_equal( const std::vector<std::shared_ptr<const ImagePlacement>>& a,
+                              const std::vector<std::shared_ptr<const ImagePlacement>>& b )
+{
+  if ( a.size() != b.size() ) {
+    return false;
+  }
+  for ( size_t i = 0; i < a.size(); i++ ) {
+    if ( !( *a[i] == *b[i] ) ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool Row::operator==( const Row& x ) const
+{
+  return ( gen == x.gen ) && ( cells == x.cells ) && placements_equal( placements, x.placements );
 }
 
 void Framebuffer::prefix_window_title( const title_type& s )
@@ -653,6 +690,273 @@ void Framebuffer::prefix_window_title( const title_type& s )
     icon_name.insert( icon_name.begin(), s.begin(), s.end() );
   }
   window_title.insert( window_title.begin(), s.begin(), s.end() );
+}
+
+static const size_t KITTY_DEFAULT_STORE_CAP = 32 * 1024 * 1024;
+static size_t kitty_store_cap = KITTY_DEFAULT_STORE_CAP;
+
+void Framebuffer::set_kitty_store_cap_for_tests( size_t bytes )
+{
+  kitty_store_cap = bytes;
+}
+
+uint32_t Framebuffer::image_store_put( uint32_t app_id,
+                                       int format,
+                                       int width,
+                                       int height,
+                                       bool compressed,
+                                       std::shared_ptr<const std::string> blob )
+{
+  if ( app_id != 0 ) {
+    std::map<uint32_t, uint32_t>::iterator existing = kitty_app_id_to_internal.find( app_id );
+    if ( existing != kitty_app_id_to_internal.end() ) {
+      /* re-transmit: the old internal id's placements, data, app-id mapping
+         and any number mapping pointing at it are all gone. */
+      uint32_t old_internal_id = existing->second;
+      delete_placements_of_image( old_internal_id );
+      image_store_forget( old_internal_id );
+    }
+  }
+
+  uint32_t internal_id = kitty_next_internal_id++;
+  auto image = std::make_shared<Image>( internal_id, app_id, format, width, height, compressed, std::move( blob ) );
+
+  kitty_images[internal_id] = image;
+  if ( app_id != 0 ) {
+    kitty_app_id_to_internal[app_id] = internal_id;
+  }
+  return internal_id;
+}
+
+std::shared_ptr<const Image> Framebuffer::image_store_get( uint32_t internal_id ) const
+{
+  std::map<uint32_t, std::shared_ptr<const Image>>::const_iterator it = kitty_images.find( internal_id );
+  return it == kitty_images.end() ? nullptr : it->second;
+}
+
+uint32_t Framebuffer::image_store_resolve( uint32_t app_id ) const
+{
+  std::map<uint32_t, uint32_t>::const_iterator it = kitty_app_id_to_internal.find( app_id );
+  return it == kitty_app_id_to_internal.end() ? 0 : it->second;
+}
+
+size_t Framebuffer::image_store_bytes( void ) const
+{
+  size_t total = 0;
+  for ( std::map<uint32_t, std::shared_ptr<const Image>>::const_iterator it = kitty_images.begin();
+        it != kitty_images.end();
+        ++it ) {
+    if ( it->second->blob ) {
+      total += it->second->blob->size();
+    }
+  }
+  return total;
+}
+
+void Framebuffer::image_store_forget( uint32_t internal_id )
+{
+  kitty_images.erase( internal_id );
+  for ( std::map<uint32_t, uint32_t>::iterator it = kitty_app_id_to_internal.begin();
+        it != kitty_app_id_to_internal.end(); ) {
+    if ( it->second == internal_id ) {
+      it = kitty_app_id_to_internal.erase( it );
+    } else {
+      ++it;
+    }
+  }
+  for ( std::map<uint32_t, uint32_t>::iterator it = kitty_number_to_internal.begin();
+        it != kitty_number_to_internal.end(); ) {
+    if ( it->second == internal_id ) {
+      it = kitty_number_to_internal.erase( it );
+    } else {
+      ++it;
+    }
+  }
+}
+
+uint32_t Framebuffer::image_store_resolve_number( uint32_t number ) const
+{
+  std::map<uint32_t, uint32_t>::const_iterator it = kitty_number_to_internal.find( number );
+  return it == kitty_number_to_internal.end() ? 0 : it->second;
+}
+
+void Framebuffer::image_store_set_number( uint32_t number, uint32_t internal_id )
+{
+  kitty_number_to_internal[number] = internal_id; /* latest wins */
+}
+
+uint32_t Framebuffer::kitty_allocate_app_id_for_number( void )
+{
+  /* An app is free to choose any i= up to 4294967295, including ids at or
+     above KITTY_NUMBER_APP_ID_BASE, so blindly handing out the next counter
+     value could silently steal and destroy an app-chosen image with the
+     same id. Search for the next id that both is nonzero and isn't already
+     claimed, wrapping around 0xFFFFFFFF back to the base of the range. */
+  uint32_t start = kitty_next_number_app_id;
+  uint32_t candidate = start;
+  do {
+    if ( ( candidate != 0 ) && ( kitty_app_id_to_internal.find( candidate ) == kitty_app_id_to_internal.end() ) ) {
+      kitty_next_number_app_id = ( candidate == 0xFFFFFFFFu ) ? KITTY_NUMBER_APP_ID_BASE : candidate + 1;
+      return candidate;
+    }
+    candidate = ( candidate == 0xFFFFFFFFu ) ? KITTY_NUMBER_APP_ID_BASE : candidate + 1;
+  } while ( candidate != start );
+  return 0; /* every id in the range is taken; caller replies ENOSPC */
+}
+
+bool Framebuffer::image_store_make_room( uint32_t replacing_app_id, size_t incoming_bytes )
+{
+  /* An image already mapped to replacing_app_id is about to be replaced by
+     image_store_put: credit its bytes and its slot back so a same-size (or
+     smaller) re-transmit of the same id never has to evict anything, and is
+     never blocked by the count cap either. Never evict it out from under
+     ourselves while computing that credit. */
+  uint32_t protected_id = 0;
+  if ( replacing_app_id != 0 ) {
+    std::map<uint32_t, uint32_t>::const_iterator it = kitty_app_id_to_internal.find( replacing_app_id );
+    if ( it != kitty_app_id_to_internal.end() ) {
+      protected_id = it->second;
+    }
+  }
+
+  auto bytes_excluding_protected = [&]() -> size_t {
+    size_t total = 0;
+    for ( std::map<uint32_t, std::shared_ptr<const Image>>::const_iterator it = kitty_images.begin();
+          it != kitty_images.end();
+          ++it ) {
+      if ( it->first == protected_id ) {
+        continue;
+      }
+      if ( it->second->blob ) {
+        total += it->second->blob->size();
+      }
+    }
+    return total;
+  };
+  auto count_excluding_protected = [&]() -> size_t { return kitty_images.size() - ( protected_id != 0 ? 1 : 0 ); };
+
+  while ( ( bytes_excluding_protected() + incoming_bytes > kitty_store_cap )
+          || ( count_excluding_protected() + 1 > Kitty::MAX_IMAGES ) ) {
+    uint32_t victim = 0;
+    for ( std::map<uint32_t, std::shared_ptr<const Image>>::const_iterator it = kitty_images.begin();
+          it != kitty_images.end();
+          ++it ) {
+      if ( it->first == protected_id ) {
+        continue;
+      }
+      if ( !image_has_placement( it->first ) ) {
+        victim = it->first;
+        break;
+      }
+    }
+    if ( victim == 0 ) {
+      return false; /* nothing left that can be evicted; still would not fit */
+    }
+    image_store_forget( victim );
+  }
+  return true;
+}
+
+void Framebuffer::add_placement( int row, std::shared_ptr<const ImagePlacement> placement )
+{
+  get_mutable_row( row )->placements.push_back( std::move( placement ) );
+}
+
+bool Framebuffer::image_has_placement( uint32_t internal_id ) const
+{
+  for ( rows_type::const_iterator r = rows.begin(); r != rows.end(); ++r ) {
+    for ( const auto& p : ( *r )->placements ) {
+      if ( p->internal_image_id == internal_id ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool Framebuffer::placement_exists( uint32_t internal_id, uint32_t placement_id ) const
+{
+  for ( rows_type::const_iterator r = rows.begin(); r != rows.end(); ++r ) {
+    for ( const auto& p : ( *r )->placements ) {
+      if ( ( p->internal_image_id == internal_id ) && ( p->placement_id == placement_id ) ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+size_t Framebuffer::placement_count( void ) const
+{
+  size_t total = 0;
+  for ( rows_type::const_iterator r = rows.begin(); r != rows.end(); ++r ) {
+    total += ( *r )->placements.size();
+  }
+  return total;
+}
+
+void Framebuffer::delete_placements_of_image( uint32_t internal_id )
+{
+  for ( size_t r = 0; r < rows.size(); r++ ) {
+    bool has = false;
+    for ( const auto& p : rows[r]->placements ) {
+      if ( p->internal_image_id == internal_id ) {
+        has = true;
+        break;
+      }
+    }
+    if ( !has ) {
+      continue;
+    }
+    Row* mutable_row = get_mutable_row( static_cast<int>( r ) );
+    auto& placements = mutable_row->placements;
+    placements.erase( std::remove_if( placements.begin(),
+                                      placements.end(),
+                                      [internal_id]( const std::shared_ptr<const ImagePlacement>& p ) {
+                                        return p->internal_image_id == internal_id;
+                                      } ),
+                      placements.end() );
+  }
+}
+
+void Framebuffer::delete_placement_by_id( uint32_t internal_id, uint32_t placement_id )
+{
+  for ( size_t r = 0; r < rows.size(); r++ ) {
+    bool has = false;
+    for ( const auto& p : rows[r]->placements ) {
+      if ( ( p->internal_image_id == internal_id ) && ( p->placement_id == placement_id ) ) {
+        has = true;
+        break;
+      }
+    }
+    if ( !has ) {
+      continue;
+    }
+    Row* mutable_row = get_mutable_row( static_cast<int>( r ) );
+    auto& placements = mutable_row->placements;
+    placements.erase(
+      std::remove_if( placements.begin(),
+                      placements.end(),
+                      [internal_id, placement_id]( const std::shared_ptr<const ImagePlacement>& p ) {
+                        return ( p->internal_image_id == internal_id ) && ( p->placement_id == placement_id );
+                      } ),
+      placements.end() );
+  }
+}
+
+void Framebuffer::clear_all_placements( bool free_data )
+{
+  for ( size_t r = 0; r < rows.size(); r++ ) {
+    if ( rows[r]->placements.empty() ) {
+      continue;
+    }
+    get_mutable_row( static_cast<int>( r ) )->placements.clear();
+  }
+  if ( free_data ) {
+    kitty_images.clear();
+    kitty_app_id_to_internal.clear();
+    kitty_number_to_internal.clear();
+  }
 }
 
 std::string Cell::debug_contents( void ) const

@@ -46,8 +46,10 @@ Transition State::anywhere_rule( wchar_t ch ) const
     return Transition( &family->s_Ground );
   } else if ( ch == 0x1B ) {
     return Transition( &family->s_Escape );
-  } else if ( ( ch == 0x98 ) || ( ch == 0x9E ) || ( ch == 0x9F ) ) {
+  } else if ( ( ch == 0x98 ) || ( ch == 0x9E ) ) {
     return Transition( &family->s_SOS_PM_APC_String );
+  } else if ( ch == 0x9F ) {
+    return Transition( &family->s_APC_String );
   } else if ( ch == 0x90 ) {
     return Transition( &family->s_DCS_Entry );
   } else if ( ch == 0x9D ) {
@@ -132,8 +134,12 @@ Transition Escape::input_state_rule( wchar_t ch ) const
     return Transition( &family->s_DCS_Entry );
   }
 
-  if ( ( ch == 0x58 ) || ( ch == 0x5E ) || ( ch == 0x5F ) ) {
+  if ( ( ch == 0x58 ) || ( ch == 0x5E ) ) {
     return Transition( &family->s_SOS_PM_APC_String );
+  }
+
+  if ( ch == 0x5F ) {
+    return Transition( &family->s_APC_String );
   }
 
   return Transition();
@@ -376,6 +382,27 @@ Transition SOS_PM_APC_String::input_state_rule( wchar_t ch ) const
 {
   if ( ch == 0x9C ) {
     return Transition( &family->s_Ground );
+  }
+
+  return Transition();
+}
+
+ActionPointer APC_String::enter( void ) const
+{
+  return std::make_shared<APC_Start>();
+}
+
+ActionPointer APC_String::exit( void ) const
+{
+  return std::make_shared<APC_End>();
+}
+
+Transition APC_String::input_state_rule( wchar_t ch ) const
+{
+  /* Unlike OSC_String, BEL is not accepted as a terminator; only ST (as
+     0x9C, handled by the anywhere rule) or ESC \ end an APC string. */
+  if ( ( 0x20 <= ch ) && ( ch <= 0x7E ) ) {
+    return Transition( std::make_shared<APC_Put>() );
   }
 
   return Transition();

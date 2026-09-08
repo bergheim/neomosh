@@ -154,6 +154,11 @@ void Emulator::OSC_end( const Parser::OSC_End* act )
   dispatch.OSC_dispatch( act, &fb );
 }
 
+void Emulator::APC_end( const Parser::APC_End* act )
+{
+  dispatch.APC_dispatch( act, &fb );
+}
+
 void Emulator::Esc_dispatch( const Parser::Esc_Dispatch* act )
 {
   /* handle 7-bit ESC-encoding of C1 control characters */

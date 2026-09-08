@@ -88,6 +88,21 @@ void OSC_End::act_on_terminal( Terminal::Emulator* emu ) const
   emu->OSC_end( this );
 }
 
+void APC_Start::act_on_terminal( Terminal::Emulator* emu ) const
+{
+  emu->dispatch.APC_start( this );
+}
+
+void APC_Put::act_on_terminal( Terminal::Emulator* emu ) const
+{
+  emu->dispatch.APC_put( this );
+}
+
+void APC_End::act_on_terminal( Terminal::Emulator* emu ) const
+{
+  emu->APC_end( this );
+}
+
 void UserByte::act_on_terminal( Terminal::Emulator* emu ) const
 {
   emu->dispatch.terminal_to_host.append( emu->user.input( this, emu->fb.ds.application_mode_cursor_keys ) );
