@@ -276,6 +276,13 @@ void STMClient::main_init( void )
   /* open network */
   Network::UserStream blank;
   Terminal::Complete local_terminal( window_size.ws_col, window_size.ws_row );
+  /* This Complete mirrors the server's state, not our own: its Kitty
+     module must resolve i= directly as an internal id and never accept
+     pixels through APC (they arrive as ImageChunk instructions instead).
+     Must be set before the first apply_string, so before the Transport
+     below takes its own copy of local_terminal as the initial remote
+     state. */
+  local_terminal.set_kitty_ids_are_internal();
   network = NetworkPointer( new NetworkType( blank, local_terminal, key.c_str(), ip.c_str(), port.c_str() ) );
 
   network->set_send_delay( 1 ); /* minimal delay on outgoing keystrokes */

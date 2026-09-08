@@ -63,7 +63,11 @@ private:
 public:
   Complete( size_t width, size_t height )
     : parser(), terminal( width, height ), display( false ), actions(), input_history(), echo_ack( 0 )
-  {}
+  {
+    /* diff_from's hostbytes come from this Display; every Kitty command it
+       emits must carry q=2 and internal ids, never local terminal ids. */
+    display.set_graphics_mode( GraphicsMode::WIRE );
+  }
 
   std::string act( const std::string& str );
   std::string act( const Parser::Action& act );
@@ -74,6 +78,15 @@ public:
   bool set_echo_ack( uint64_t now );
   void register_input_frame( uint64_t n, uint64_t now );
   int wait_time( uint64_t now ) const;
+
+  /* Kitty graphics wire pacing. Server side: admit up to budget bytes of
+     image data (across all images, internal-id order) so future diff_from
+     calls include them; has_unadmitted_images gates the caller's pacing
+     loop. Client side: set once, before the first apply_string, so the
+     Kitty module resolves ids as internal ids and refuses direct pixels. */
+  void set_kitty_ids_are_internal( void ) { terminal.set_kitty_ids_are_internal(); }
+  size_t admit_image_bytes( size_t budget ) { return terminal.admit_kitty_image_bytes( budget ); }
+  bool has_unadmitted_images( void ) const { return terminal.has_unadmitted_kitty_images(); }
 
   /* interface for Network::Transport */
   void subtract( const Complete* ) const {}

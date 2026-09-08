@@ -78,7 +78,8 @@ static const uint32_t KITTY_NUMBER_APP_ID_BASE = 0x80000000;
 Framebuffer::Framebuffer( int s_width, int s_height )
   : rows(), icon_name(), window_title(), clipboard(), bell_count( 0 ), title_initialized( false ), kitty_images(),
     kitty_app_id_to_internal(), kitty_number_to_internal(), kitty_next_internal_id( 1 ),
-    kitty_next_number_app_id( KITTY_NUMBER_APP_ID_BASE ), ds( s_width, s_height )
+    kitty_next_number_app_id( KITTY_NUMBER_APP_ID_BASE ), kitty_next_placement_uid( 1 ), kitty_admitted(),
+    kitty_pending(), kitty_ids_are_internal( false ), ds( s_width, s_height )
 {
   assert( s_height > 0 );
   assert( s_width > 0 );
@@ -93,7 +94,9 @@ Framebuffer::Framebuffer( const Framebuffer& other )
     kitty_images( other.kitty_images ), kitty_app_id_to_internal( other.kitty_app_id_to_internal ),
     kitty_number_to_internal( other.kitty_number_to_internal ),
     kitty_next_internal_id( other.kitty_next_internal_id ),
-    kitty_next_number_app_id( other.kitty_next_number_app_id ), ds( other.ds )
+    kitty_next_number_app_id( other.kitty_next_number_app_id ),
+    kitty_next_placement_uid( other.kitty_next_placement_uid ), kitty_admitted( other.kitty_admitted ),
+    kitty_pending( other.kitty_pending ), kitty_ids_are_internal( other.kitty_ids_are_internal ), ds( other.ds )
 {}
 
 Framebuffer& Framebuffer::operator=( const Framebuffer& other )
@@ -110,6 +113,10 @@ Framebuffer& Framebuffer::operator=( const Framebuffer& other )
     kitty_number_to_internal = other.kitty_number_to_internal;
     kitty_next_internal_id = other.kitty_next_internal_id;
     kitty_next_number_app_id = other.kitty_next_number_app_id;
+    kitty_next_placement_uid = other.kitty_next_placement_uid;
+    kitty_admitted = other.kitty_admitted;
+    kitty_pending = other.kitty_pending;
+    kitty_ids_are_internal = other.kitty_ids_are_internal;
     ds = other.ds;
   }
   return *this;
@@ -403,8 +410,21 @@ void Framebuffer::reset( void )
   kitty_images.clear();
   kitty_app_id_to_internal.clear();
   kitty_number_to_internal.clear();
-  kitty_next_internal_id = 1;
   kitty_next_number_app_id = KITTY_NUMBER_APP_ID_BASE;
+  kitty_admitted.clear();
+  kitty_pending.clear();
+  /* kitty_next_internal_id and kitty_next_placement_uid are NOT reset here:
+     they must stay monotonic for the life of the session, not just this
+     Framebuffer. The transport keeps older states around (sent_states,
+     received_states) that can still reference images/placements by id; if
+     a RIS restarted these counters at 1, a new image transmitted after RIS
+     could reuse an id the client already has complete, and the client's
+     kitty_apply_chunk would then treat every chunk for it as stale (or, if
+     the reused id happened to still be mid-assembly, resume from the wrong
+     offset). Restarting the store, its maps and the pending assembly is
+     still correct -- RIS really does throw those away. */
+  /* kitty_ids_are_internal is not reset either: it identifies which side of
+     the wire this Framebuffer belongs to, not display state. */
   /* do not reset bell_count */
 }
 
@@ -722,10 +742,26 @@ uint32_t Framebuffer::image_store_put( uint32_t app_id,
   auto image = std::make_shared<Image>( internal_id, app_id, format, width, height, compressed, std::move( blob ) );
 
   kitty_images[internal_id] = image;
+  kitty_admitted[internal_id] = 0;
   if ( app_id != 0 ) {
     kitty_app_id_to_internal[app_id] = internal_id;
   }
   return internal_id;
+}
+
+void Framebuffer::image_store_put_with_id( uint32_t internal_id,
+                                           int format,
+                                           int width,
+                                           int height,
+                                           bool compressed )
+{
+  auto image = std::make_shared<Image>(
+    internal_id, /* app_id = */ 0, format, width, height, compressed, /* blob = */ nullptr );
+  kitty_images[internal_id] = image;
+  kitty_admitted[internal_id] = 0;
+  if ( internal_id >= kitty_next_internal_id ) {
+    kitty_next_internal_id = internal_id + 1;
+  }
 }
 
 std::shared_ptr<const Image> Framebuffer::image_store_get( uint32_t internal_id ) const
@@ -756,6 +792,8 @@ size_t Framebuffer::image_store_bytes( void ) const
 void Framebuffer::image_store_forget( uint32_t internal_id )
 {
   kitty_images.erase( internal_id );
+  kitty_admitted.erase( internal_id );
+  kitty_pending.erase( internal_id );
   for ( std::map<uint32_t, uint32_t>::iterator it = kitty_app_id_to_internal.begin();
         it != kitty_app_id_to_internal.end(); ) {
     if ( it->second == internal_id ) {
@@ -857,9 +895,159 @@ bool Framebuffer::image_store_make_room( uint32_t replacing_app_id, size_t incom
   return true;
 }
 
-void Framebuffer::add_placement( int row, std::shared_ptr<const ImagePlacement> placement )
+size_t Framebuffer::kitty_admitted_bytes( uint32_t internal_id ) const
 {
-  get_mutable_row( row )->placements.push_back( std::move( placement ) );
+  std::map<uint32_t, size_t>::const_iterator it = kitty_admitted.find( internal_id );
+  return it == kitty_admitted.end() ? 0 : it->second;
+}
+
+size_t Framebuffer::kitty_admit_bytes( size_t budget )
+{
+  size_t admitted_total = 0;
+  /* kitty_images is a std::map, so this walks internal ids in order. */
+  for ( std::map<uint32_t, std::shared_ptr<const Image>>::const_iterator it = kitty_images.begin();
+        it != kitty_images.end() && budget > 0;
+        ++it ) {
+    const uint32_t internal_id = it->first;
+    const size_t blob_size = it->second->blob ? it->second->blob->size() : 0;
+    size_t& admitted = kitty_admitted[internal_id]; /* image_store_put always seeded this at 0 */
+    if ( admitted >= blob_size ) {
+      continue;
+    }
+    const size_t room = blob_size - admitted;
+    const size_t take = ( room < budget ) ? room : budget;
+    admitted += take;
+    budget -= take;
+    admitted_total += take;
+  }
+  return admitted_total;
+}
+
+bool Framebuffer::kitty_has_unadmitted_bytes( void ) const
+{
+  for ( std::map<uint32_t, std::shared_ptr<const Image>>::const_iterator it = kitty_images.begin();
+        it != kitty_images.end();
+        ++it ) {
+    const size_t blob_size = it->second->blob ? it->second->blob->size() : 0;
+    if ( kitty_admitted_bytes( it->first ) < blob_size ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void Framebuffer::kitty_apply_chunk( uint32_t internal_id,
+                                     uint64_t offset,
+                                     std::shared_ptr<const std::string> data,
+                                     uint64_t total,
+                                     int format,
+                                     int width,
+                                     int height,
+                                     bool compressed )
+{
+  std::map<uint32_t, std::shared_ptr<const Image>>::const_iterator it = kitty_images.find( internal_id );
+  if ( it != kitty_images.end() && it->second->blob ) {
+    return; /* already complete: a full repaint re-sends everything, so this chunk is stale */
+  }
+
+  std::map<uint32_t, KittyPendingImage>::iterator pending_it = kitty_pending.find( internal_id );
+
+  if ( pending_it == kitty_pending.end() ) {
+    /* First chunk for this id: its metadata locks in the image's identity
+       for every later chunk of this id (checked in the else branch below).
+       The client never evicts (unlike the server, it has nowhere else to
+       get the bytes back from), so a chunk that would blow a cap, or
+       already overruns its own declared total, is refused outright rather
+       than accepted on faith from the network. */
+    if ( offset != 0 ) {
+      return; /* the assembly must start at 0 */
+    }
+    if ( total > Kitty::IMAGE_MAX_BYTES ) {
+      return;
+    }
+    if ( data->size() > total ) {
+      return; /* the first piece alone already overruns the declared total */
+    }
+    if ( ( kitty_images.size() + 1 > Kitty::MAX_IMAGES )
+         || ( image_store_bytes() + kitty_pending_reserved_bytes() + total > kitty_store_cap ) ) {
+      return;
+    }
+    image_store_put_with_id( internal_id, format, width, height, compressed );
+    pending_it
+      = kitty_pending.emplace( internal_id, KittyPendingImage( total, format, width, height, compressed ) ).first;
+  } else {
+    /* Continuation: must agree with the identity the first chunk locked
+       in, and be exactly the next contiguous, in-budget piece. Anything
+       else is untrusted network input: drop it, no state change. */
+    const KittyPendingImage& pending = pending_it->second;
+    if ( ( total != pending.total ) || ( format != pending.format ) || ( width != pending.width )
+         || ( height != pending.height ) || ( compressed != pending.compressed ) ) {
+      return;
+    }
+    if ( offset != pending.received ) {
+      return;
+    }
+    if ( data->size() > pending.total - pending.received ) {
+      return;
+    }
+  }
+
+  KittyPendingImage& pending = pending_it->second;
+  if ( !data->empty() ) {
+    pending.received += data->size();
+    pending.pieces.push_back( std::move( data ) );
+  }
+
+  if ( pending.received < pending.total ) {
+    return; /* still waiting for more pieces */
+  }
+
+  /* pending.received == pending.total exactly: every chunk above that
+     would have made it overshoot was already rejected. */
+  std::string full;
+  full.reserve( pending.total );
+  for ( const auto& piece : pending.pieces ) {
+    full += *piece;
+  }
+
+  std::shared_ptr<const Image> stub = kitty_images.at( internal_id );
+  kitty_images[internal_id] = std::make_shared<Image>( internal_id,
+                                                       stub->app_id,
+                                                       stub->format,
+                                                       stub->width,
+                                                       stub->height,
+                                                       stub->compressed,
+                                                       std::make_shared<const std::string>( std::move( full ) ) );
+  kitty_pending.erase( internal_id );
+}
+
+size_t Framebuffer::kitty_pending_reserved_bytes( void ) const
+{
+  size_t total_reserved = 0;
+  for ( const auto& kv : kitty_pending ) {
+    total_reserved += kv.second.total;
+  }
+  return total_reserved;
+}
+
+size_t Framebuffer::kitty_pending_piece_count( uint32_t internal_id ) const
+{
+  std::map<uint32_t, KittyPendingImage>::const_iterator it = kitty_pending.find( internal_id );
+  return it == kitty_pending.end() ? 0 : it->second.pieces.size();
+}
+
+void Framebuffer::add_placement( int row, std::shared_ptr<ImagePlacement> placement, uint32_t forced_uid )
+{
+  placement->uid = forced_uid ? forced_uid : kitty_next_placement_uid++;
+  Row* mutable_row = get_mutable_row( row );
+  mutable_row->placements.push_back( std::move( placement ) );
+  /* A placements-only change doesn't touch cells, so it must bump gen itself
+     (like Row::reset() does for ED/EL) -- otherwise this row can coincide,
+     cell-for-cell and gen-for-gen, with an unrelated row that has always
+     been blank (both trace back to the same shared blank-row prototype),
+     and Display::new_frame's scroll shortcut will treat the two as the same
+     row and skip diffing this one's placements entirely. */
+  mutable_row->gen = mutable_row->get_gen();
 }
 
 bool Framebuffer::image_has_placement( uint32_t internal_id ) const
@@ -916,6 +1104,7 @@ void Framebuffer::delete_placements_of_image( uint32_t internal_id )
                                         return p->internal_image_id == internal_id;
                                       } ),
                       placements.end() );
+    mutable_row->gen = mutable_row->get_gen(); /* see add_placement */
   }
 }
 
@@ -941,6 +1130,7 @@ void Framebuffer::delete_placement_by_id( uint32_t internal_id, uint32_t placeme
                         return ( p->internal_image_id == internal_id ) && ( p->placement_id == placement_id );
                       } ),
       placements.end() );
+    mutable_row->gen = mutable_row->get_gen(); /* see add_placement */
   }
 }
 
@@ -950,12 +1140,22 @@ void Framebuffer::clear_all_placements( bool free_data )
     if ( rows[r]->placements.empty() ) {
       continue;
     }
-    get_mutable_row( static_cast<int>( r ) )->placements.clear();
+    Row* mutable_row = get_mutable_row( static_cast<int>( r ) );
+    mutable_row->placements.clear();
+    mutable_row->gen = mutable_row->get_gen(); /* see add_placement */
   }
   if ( free_data ) {
     kitty_images.clear();
     kitty_app_id_to_internal.clear();
     kitty_number_to_internal.clear();
+    /* Every historical id's admitted-bytes and pending-assembly entries
+       must go too: this clears the whole store directly rather than
+       through image_store_forget (which drops both per id), and those
+       maps would otherwise keep growing, entry by entry, across however
+       many images this Framebuffer ever held -- and get copied into every
+       transport snapshot along with it. */
+    kitty_admitted.clear();
+    kitty_pending.clear();
   }
 }
 

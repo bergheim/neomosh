@@ -36,6 +36,20 @@
 #include "src/terminal/terminalframebuffer.h"
 
 namespace Terminal {
+/* NONE: no Kitty wire emission at all (the default; also what a local
+   client Display uses until the next branch's probe succeeds). WIRE: used
+   by Complete's Display on the server, and by a client's Kitty module to
+   interpret what WIRE emits -- placements diffed by uid, positioned and
+   deleted with internal ids and q=2. KITTY: reserved for the next branch
+   (a client Display talking Kitty graphics to the real local terminal);
+   behaves like NONE here. */
+enum class GraphicsMode
+{
+  NONE,
+  WIRE,
+  KITTY
+};
+
 /* variables used within a new_frame */
 class FrameState
 {
@@ -48,6 +62,21 @@ public:
   bool cursor_visible;
 
   const Framebuffer& last_frame;
+
+  /* WIRE mode only: placement diffs collected across the *whole* frame by
+     Display::put_row (by way of record_placement_diff), flushed once at
+     the end of Display::new_frame -- every removal, then every addition.
+     put_row's view is one row at a time, so when the scroll shortcut isn't
+     taken, the same (internal id, uid) can show up as "gone" from its old
+     row and "new" at its new row purely because two independent per-row
+     comparisons happened to name the same placement; emitting per-row as
+     each is found would let a same-uid delete meant for the old row
+     clobber the add that already landed at the new one. Collecting first
+     and flushing removals-before-additions nets that out to the right
+     final state regardless of how many rows are involved. Empty and
+     unused outside WIRE mode. */
+  std::vector<std::shared_ptr<const ImagePlacement>> kitty_removals;
+  std::vector<std::pair<int, std::shared_ptr<const ImagePlacement>>> kitty_additions; /* (frame_y, placement) */
 
   FrameState( const Framebuffer& s_last );
 
@@ -76,6 +105,8 @@ private:
 
   const char *smcup, *rmcup; /* enter and exit alternate screen mode */
 
+  GraphicsMode graphics_mode;
+
   bool put_row( bool initialized,
                 FrameState& frame,
                 const Framebuffer& f,
@@ -85,11 +116,29 @@ private:
 
   bool can_use_erase( const FrameState& frame ) const;
 
+  /* WIRE mode only: diff one row's placements by uid against the old row's
+     and record what changed into frame's kitty_removals/kitty_additions --
+     nothing is written to frame.str here. Called from put_row, once per
+     row. */
+  void record_placement_diff( FrameState& frame,
+                              int frame_y,
+                              const std::vector<std::shared_ptr<const ImagePlacement>>& old_placements,
+                              const std::vector<std::shared_ptr<const ImagePlacement>>& new_placements ) const;
+
+  /* WIRE mode only: emit every placement diff record_placement_diff
+     collected across the whole frame -- all removals, then all additions
+     (each with its own silent cursor move) -- and clear both lists.
+     Called once, at the end of new_frame. */
+  void flush_placement_diffs( FrameState& frame ) const;
+
 public:
   std::string open() const;
   std::string close() const;
 
   std::string new_frame( bool initialized, const Framebuffer& last, const Framebuffer& f ) const;
+
+  void set_graphics_mode( GraphicsMode mode ) { graphics_mode = mode; }
+  GraphicsMode get_graphics_mode( void ) const { return graphics_mode; }
 
   Display( bool use_environment );
 };

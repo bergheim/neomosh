@@ -409,6 +409,39 @@ public:
   }
 };
 
+/* Client side: an image whose bytes are still arriving. The first chunk's
+   metadata locks in this image's identity for every later chunk of the
+   same id -- a later chunk that disagrees (a different total, or any
+   other metadata field), is misaligned, or would push received past
+   total is untrusted network input and gets dropped, not trusted.
+   received is a running counter, not re-summed from pieces on every call
+   (which would be quadratic over many small chunks); an empty piece is
+   never appended to pieces (the metadata-only "just create the entry"
+   chunk leaves pieces empty and received at 0). */
+struct KittyPendingImage
+{
+  KittyPendingImage()
+    : total( 0 ), format( 0 ), width( 0 ), height( 0 ), compressed( false ), received( 0 ), pieces()
+  {}
+  KittyPendingImage( uint64_t s_total, int s_format, int s_width, int s_height, bool s_compressed )
+    : total( s_total ), format( s_format ), width( s_width ), height( s_height ), compressed( s_compressed ),
+      received( 0 ), pieces()
+  {}
+
+  uint64_t total;
+  int format;
+  int width, height;
+  bool compressed;
+  uint64_t received;
+  std::vector<std::shared_ptr<const std::string>> pieces;
+
+  bool operator==( const KittyPendingImage& x ) const
+  {
+    return ( total == x.total ) && ( format == x.format ) && ( width == x.width ) && ( height == x.height )
+           && ( compressed == x.compressed ) && ( received == x.received ) && ( pieces == x.pieces );
+  }
+};
+
 class Framebuffer
 {
   // To minimize copying of rows and cells, we use shared_ptr to
@@ -448,6 +481,29 @@ private:
      transmits with I= and no i=; starts at 0x80000000 to stay clear of the
      32-bit space a client would plausibly pick for its own i= values. */
   uint32_t kitty_next_number_app_id;
+  /* Counter for ImagePlacement::uid, the wire-unique placement id Display
+     emits in WIRE mode; allocated by add_placement. Part of synchronised
+     state only indirectly, through the uids it hands out -- like the id
+     counters above, the counter itself is not compared for equality. */
+  uint32_t kitty_next_placement_uid;
+
+  /* Server side: bytes of each image's blob admitted onto the wire so far,
+     keyed by internal id. This *is* synchronised state -- it drives what
+     diff_from actually sends -- unlike the allocation counters above. */
+  std::map<uint32_t, size_t> kitty_admitted;
+
+  /* Client side: in-progress ImageChunk assemblies, keyed by internal id.
+     Each entry's pieces are immutable once received, so identity
+     (shared_ptr) comparison in operator== is exactly what "has this
+     changed" means. Dropped once the blob is complete. */
+  std::map<uint32_t, KittyPendingImage> kitty_pending;
+
+  /* Client side only: when set, the Kitty module resolves `i=` in a=p and
+     a=d directly as an internal id instead of through kitty_app_id_to_internal,
+     and refuses a=t/a=T outright (the client never receives pixels through
+     APC; they arrive as ImageChunk instructions instead). Not part of
+     synchronised state: constant for the life of the side that sets it. */
+  bool kitty_ids_are_internal;
 
   row_pointer newrow( void )
   {
@@ -455,6 +511,13 @@ private:
     const color_type c = ds.get_background_rendition();
     return std::make_shared<Row>( w, c );
   }
+
+  /* Client side: total bytes reserved by still-assembling images (their
+     declared total, not what's been received so far) -- counted toward
+     the store cap alongside image_store_bytes() so a flood of first
+     chunks for distinct ids can't each reserve up to IMAGE_MAX_BYTES and
+     blow the cap before any of them ever completes. */
+  size_t kitty_pending_reserved_bytes( void ) const;
 
 public:
   Framebuffer( int s_width, int s_height );
@@ -523,10 +586,15 @@ public:
                             int height,
                             bool compressed,
                             std::shared_ptr<const std::string> blob );
+  /* Client side: create a stub entry under an exact, already-known internal
+     id (from the wire), with a null blob -- placements may reference it
+     before its bytes are complete. Used only by kitty_apply_chunk. */
+  void image_store_put_with_id( uint32_t internal_id, int format, int width, int height, bool compressed );
   std::shared_ptr<const Image> image_store_get( uint32_t internal_id ) const;
   uint32_t image_store_resolve( uint32_t app_id ) const; /* app id -> internal id, 0 if unknown */
   size_t image_store_bytes( void ) const;
   size_t image_store_count( void ) const { return kitty_images.size(); }
+  const std::map<uint32_t, std::shared_ptr<const Image>>& get_kitty_images( void ) const { return kitty_images; }
   /* Make room for incoming_bytes plus one more image, evicting the oldest
      unplaced images first. If replacing_app_id is nonzero and already maps
      to a stored image, that image's bytes and slot are credited back (a
@@ -551,8 +619,45 @@ public:
      by production code. */
   static void set_kitty_store_cap_for_tests( size_t bytes );
 
-  /* Kitty graphics: placements, stored on their anchor Row. */
-  void add_placement( int row, std::shared_ptr<const ImagePlacement> placement );
+  /* Kitty graphics wire pacing (server side). Raise each image's admitted
+     count, in internal-id order, by up to budget bytes in total; returns
+     the number of bytes actually admitted. A pure function of the store and
+     the admitted counts -- no clock, no hidden counter. */
+  size_t kitty_admit_bytes( size_t budget );
+  bool kitty_has_unadmitted_bytes( void ) const;
+  size_t kitty_admitted_bytes( uint32_t internal_id ) const; /* 0 if unknown */
+
+  /* Kitty graphics wire pacing (client side). Apply one ImageChunk: the
+     first chunk for an unknown id creates the stub entry and locks in its
+     metadata (total, format, width, height, compressed) in kitty_pending;
+     every later chunk for that id must agree with the locked-in metadata,
+     continue at exactly the received-so-far offset, and stay within
+     total, or it is dropped as untrusted network input. Concatenates into
+     the final blob once received reaches total exactly. A chunk for an id
+     whose blob is already complete is ignored (a full repaint re-sends
+     everything). */
+  void kitty_apply_chunk( uint32_t internal_id,
+                          uint64_t offset,
+                          std::shared_ptr<const std::string> data,
+                          uint64_t total,
+                          int format,
+                          int width,
+                          int height,
+                          bool compressed );
+  /* Diagnostic/test accessor: how many pieces are queued for a still-
+     pending image (0 if unknown or already complete). A legitimate chunk
+     stream keeps this small regardless of chunk count, since an empty
+     piece is never queued. */
+  size_t kitty_pending_piece_count( uint32_t internal_id ) const;
+
+  void set_kitty_ids_are_internal( bool b ) { kitty_ids_are_internal = b; }
+  bool get_kitty_ids_are_internal( void ) const { return kitty_ids_are_internal; }
+
+  /* Kitty graphics: placements, stored on their anchor Row. Allocates and
+     assigns placement->uid: forced_uid if nonzero (the wire replay path,
+     which already knows the uid the sender used), otherwise the next value
+     from this Framebuffer's own counter. */
+  void add_placement( int row, std::shared_ptr<ImagePlacement> placement, uint32_t forced_uid = 0 );
   bool image_has_placement( uint32_t internal_id ) const;
   bool placement_exists( uint32_t internal_id, uint32_t placement_id ) const;
   size_t placement_count( void ) const;
@@ -590,10 +695,17 @@ public:
 
   bool operator==( const Framebuffer& x ) const
   {
+    /* kitty_next_internal_id, kitty_next_number_app_id and
+       kitty_next_placement_uid are allocation counters, not content: a
+       future divergence they'd cause always surfaces in kitty_images or the
+       placements themselves, which are compared. kitty_admitted and
+       kitty_pending, in contrast, directly gate what diff_from sends, so
+       they are content and must be compared. */
     return ( rows == x.rows ) && ( window_title == x.window_title ) && ( clipboard == x.clipboard )
            && ( bell_count == x.bell_count ) && ( ds == x.ds ) && ( kitty_images == x.kitty_images )
            && ( kitty_app_id_to_internal == x.kitty_app_id_to_internal )
-           && ( kitty_number_to_internal == x.kitty_number_to_internal );
+           && ( kitty_number_to_internal == x.kitty_number_to_internal ) && ( kitty_admitted == x.kitty_admitted )
+           && ( kitty_pending == x.kitty_pending );
   }
 };
 }

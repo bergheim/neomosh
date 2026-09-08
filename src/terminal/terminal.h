@@ -87,6 +87,23 @@ public:
 
   const Framebuffer& get_fb( void ) const { return fb; }
 
+  /* Kitty graphics wire pacing and chunk assembly (src/statesync/completeterminal.cc). */
+  void set_kitty_ids_are_internal( void ) { fb.set_kitty_ids_are_internal( true ); }
+  size_t admit_kitty_image_bytes( size_t budget ) { return fb.kitty_admit_bytes( budget ); }
+  bool has_unadmitted_kitty_images( void ) const { return fb.kitty_has_unadmitted_bytes(); }
+  void apply_kitty_image_chunk( uint32_t internal_id,
+                                uint64_t offset,
+                                std::shared_ptr<const std::string> data,
+                                uint64_t total,
+                                int format,
+                                int width,
+                                int height,
+                                bool compressed )
+  {
+    fb.kitty_apply_chunk( internal_id, offset, std::move( data ), total, format, width, height, compressed );
+  }
+  void forget_kitty_image( uint32_t internal_id ) { fb.image_store_forget( internal_id ); }
+
   bool operator==( Emulator const& x ) const;
 };
 }

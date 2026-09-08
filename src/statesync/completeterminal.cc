@@ -76,14 +76,75 @@ string Complete::diff_from( const Complete& existing ) const
     new_echo->MutableExtension( echoack )->set_echo_ack_num( get_echo_ack() );
   }
 
-  if ( !( existing.get_fb() == get_fb() ) ) {
-    if ( ( existing.get_fb().ds.get_width() != terminal.get_fb().ds.get_width() )
-         || ( existing.get_fb().ds.get_height() != terminal.get_fb().ds.get_height() ) ) {
-      Instruction* new_res = output.add_instruction();
-      new_res->MutableExtension( resize )->set_width( terminal.get_fb().ds.get_width() );
-      new_res->MutableExtension( resize )->set_height( terminal.get_fb().ds.get_height() );
+  const Framebuffer& existing_fb = existing.get_fb();
+  const Framebuffer& current_fb = terminal.get_fb();
+
+  /* Kitty graphics: an image `existing` had that the current store has
+     forgotten (d=I, eviction, or a same-id re-transmit's implicit forget)
+     never otherwise produces anything on the wire -- the hostbytes a=d
+     that goes with it only removes the placement, not the client's copy
+     of the pixels -- so the client's store would grow without bound.
+     Emitted before hostbytes, like the chunks below; image_store_forget
+     doesn't touch placements, so the ordering against the a=d in
+     hostbytes doesn't matter either way. */
+  for ( const auto& kv : existing_fb.get_kitty_images() ) {
+    const uint32_t internal_id = kv.first;
+    if ( current_fb.image_store_get( internal_id ) ) {
+      continue; /* still present */
     }
-    string update = display.new_frame( true, existing.get_fb(), terminal.get_fb() );
+    Instruction* new_removal = output.add_instruction();
+    HostBuffers::ImageChunk* removal = new_removal->MutableExtension( imagechunk );
+    removal->set_image_id( internal_id );
+    removal->set_remove( true );
+  }
+
+  /* Kitty graphics: emit image bytes admitted since `existing`, one chunk
+     per image, before the hostbytes instruction below -- so a placement
+     that names one of these images can already resolve it once the client
+     applies this same diff. Driven only by each image's admitted-bytes
+     count in the two states being compared, never a clock or a counter
+     outside the state, so this stays a pure function of (existing, this),
+     as Fragmenter::make_fragments requires.
+
+     An image `existing` has never seen at all gets a chunk even when
+     nothing has been admitted yet (offset 0, empty data, full metadata):
+     admission can lag well behind a=T (blocked by an earlier image still
+     being paced, or a state simply sent before admission next runs), and
+     hostbytes may already carry this image's placement in the very same
+     diff -- the client must be able to create the image entry before it
+     applies that placement, or do_place_existing drops it as ENOENT. */
+  for ( const auto& kv : current_fb.get_kitty_images() ) {
+    const uint32_t internal_id = kv.first;
+    const Image& image = *kv.second;
+    if ( !image.blob ) {
+      continue; /* nothing to send yet (client-side pending stub; never happens server-side) */
+    }
+    const bool existing_has_image = static_cast<bool>( existing_fb.image_store_get( internal_id ) );
+    const size_t current_admitted = current_fb.kitty_admitted_bytes( internal_id );
+    const size_t existing_admitted = existing_fb.kitty_admitted_bytes( internal_id );
+    if ( existing_has_image && ( current_admitted <= existing_admitted ) ) {
+      continue;
+    }
+    Instruction* new_chunk = output.add_instruction();
+    HostBuffers::ImageChunk* chunk = new_chunk->MutableExtension( imagechunk );
+    chunk->set_image_id( internal_id );
+    chunk->set_offset( existing_admitted );
+    chunk->set_data( image.blob->substr( existing_admitted, current_admitted - existing_admitted ) );
+    chunk->set_total( image.blob->size() );
+    chunk->set_format( image.format );
+    chunk->set_width( image.width );
+    chunk->set_height( image.height );
+    chunk->set_compressed( image.compressed );
+  }
+
+  if ( !( existing_fb == current_fb ) ) {
+    if ( ( existing_fb.ds.get_width() != current_fb.ds.get_width() )
+         || ( existing_fb.ds.get_height() != current_fb.ds.get_height() ) ) {
+      Instruction* new_res = output.add_instruction();
+      new_res->MutableExtension( resize )->set_width( current_fb.ds.get_width() );
+      new_res->MutableExtension( resize )->set_height( current_fb.ds.get_height() );
+    }
+    string update = display.new_frame( true, existing_fb, current_fb );
     if ( !update.empty() ) {
       Instruction* new_inst = output.add_instruction();
       new_inst->MutableExtension( hostbytes )->set_hoststring( update );
@@ -114,6 +175,23 @@ void Complete::apply_string( const string& diff )
       uint64_t inst_echo_ack_num = input.instruction( i ).GetExtension( echoack ).echo_ack_num();
       assert( inst_echo_ack_num >= echo_ack );
       echo_ack = inst_echo_ack_num;
+    } else if ( input.instruction( i ).HasExtension( imagechunk ) ) {
+      /* Applied directly to the image store, never through the parser: this
+         is structured data, not an escape sequence, and must never risk a
+         host reply the way a malformed APC string could. */
+      const HostBuffers::ImageChunk& chunk = input.instruction( i ).GetExtension( imagechunk );
+      if ( chunk.remove() ) {
+        terminal.forget_kitty_image( chunk.image_id() );
+      } else {
+        terminal.apply_kitty_image_chunk( chunk.image_id(),
+                                          chunk.offset(),
+                                          std::make_shared<const string>( chunk.data() ),
+                                          chunk.total(),
+                                          chunk.format(),
+                                          chunk.width(),
+                                          chunk.height(),
+                                          chunk.compressed() );
+      }
     }
   }
 }

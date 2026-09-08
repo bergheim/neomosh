@@ -256,6 +256,15 @@ std::string Display::new_frame( bool initialized, const Framebuffer& last, const
     wrap = put_row( initialized, frame, f, frame_y, *rows.at( frame_y ), wrap );
   }
 
+  if ( graphics_mode == GraphicsMode::WIRE ) {
+    /* Flush now, not per row: see FrameState::kitty_removals's comment.
+       Whatever cursor position this leaves frame.cursor_x/y at, the
+       unconditional "has cursor location changed?" check right below
+       restores it to what f.ds actually expects, same as it always does
+       for ordinary cell writes. */
+    flush_placement_diffs( frame );
+  }
+
   /* has cursor location changed? */
   if ( ( !initialized ) || ( f.ds.get_cursor_row() != frame.cursor_y )
        || ( f.ds.get_cursor_col() != frame.cursor_x ) ) {
@@ -322,6 +331,99 @@ std::string Display::new_frame( bool initialized, const Framebuffer& last, const
   return frame.str;
 }
 
+/* WIRE mode only: diff one row's placements by uid against the old row's
+   and record exactly what changed into frame's kitty_removals/
+   kitty_additions -- nothing is written to frame.str here; that happens
+   once for the whole frame, in flush_placement_diffs. A uid present on
+   both sides names the same immutable ImagePlacement content on both, so
+   it needs no re-emission. */
+void Display::record_placement_diff(
+  FrameState& frame,
+  int frame_y,
+  const std::vector<std::shared_ptr<const ImagePlacement>>& old_placements,
+  const std::vector<std::shared_ptr<const ImagePlacement>>& new_placements ) const
+{
+  auto has_uid = []( const std::vector<std::shared_ptr<const ImagePlacement>>& v, uint32_t uid ) {
+    for ( const auto& p : v ) {
+      if ( p->uid == uid ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for ( const auto& p : old_placements ) {
+    if ( !has_uid( new_placements, p->uid ) ) {
+      frame.kitty_removals.push_back( p );
+    }
+  }
+
+  for ( const auto& p : new_placements ) {
+    if ( !has_uid( old_placements, p->uid ) ) {
+      frame.kitty_additions.emplace_back( frame_y, p );
+    }
+  }
+}
+
+/* WIRE mode only: emit every placement diff record_placement_diff
+   collected across the whole frame -- all removals, then all additions
+   (each with its own silent cursor move) -- and clear both lists. A
+   placement is fully identified for deletion by (internal id, uid) alone
+   -- the receiving Kitty module never needs any other field. Every
+   command carries q=2: the client emulator must never reply.
+
+   Removals before additions, globally rather than per row, matters: when
+   the scroll shortcut isn't taken, put_row's per-row view can see the
+   same (internal id, uid) as "gone" from its old row (via one row's diff)
+   and "new" at its new row (via a different row's diff) -- two
+   independent comparisons that happen to name the same placement. Emitting
+   as each row is processed would let a same-uid delete meant for the old
+   row arrive after the add already placed it at the new row, deleting the
+   placement the frame just (re)created. Doing all deletes first still
+   removes it from wherever the client currently has it, and the add that
+   follows then puts it at the new row -- correct regardless of how many
+   rows are involved. */
+void Display::flush_placement_diffs( FrameState& frame ) const
+{
+  for ( const auto& p : frame.kitty_removals ) {
+    frame.append( "\033_Ga=d,d=i,i=" );
+    frame.append_string( std::to_string( p->internal_image_id ) );
+    frame.append( ",p=" );
+    frame.append_string( std::to_string( p->uid ) );
+    frame.append( ",q=2\033\\" );
+  }
+
+  for ( const auto& entry : frame.kitty_additions ) {
+    const int frame_y = entry.first;
+    const std::shared_ptr<const ImagePlacement>& p = entry.second;
+    frame.append_silent_move( frame_y, p->column );
+    frame.append( "\033_Ga=p,i=" );
+    frame.append_string( std::to_string( p->internal_image_id ) );
+    frame.append( ",p=" );
+    frame.append_string( std::to_string( p->uid ) );
+    frame.append( ",c=" );
+    frame.append_string( std::to_string( p->columns ) );
+    frame.append( ",r=" );
+    frame.append_string( std::to_string( p->rows ) );
+    frame.append( ",z=" );
+    frame.append_string( std::to_string( p->z ) );
+    if ( p->has_src_rect ) {
+      frame.append( ",x=" );
+      frame.append_string( std::to_string( p->src_x ) );
+      frame.append( ",y=" );
+      frame.append_string( std::to_string( p->src_y ) );
+      frame.append( ",w=" );
+      frame.append_string( std::to_string( p->src_w ) );
+      frame.append( ",h=" );
+      frame.append_string( std::to_string( p->src_h ) );
+    }
+    frame.append( ",C=1,q=2\033\\" );
+  }
+
+  frame.kitty_removals.clear();
+  frame.kitty_additions.clear();
+}
+
 bool Display::put_row( bool initialized,
                        FrameState& frame,
                        const Framebuffer& f,
@@ -349,6 +451,10 @@ bool Display::put_row( bool initialized,
   /* If rows are the same object, we don't need to do anything at all. */
   if ( initialized && &row == &old_row ) {
     return false;
+  }
+
+  if ( graphics_mode == GraphicsMode::WIRE ) {
+    record_placement_diff( frame, frame_y, old_row.placements, row.placements );
   }
 
   const bool wrap_this = row.get_wrap();
@@ -476,7 +582,7 @@ bool Display::can_use_erase( const FrameState& frame ) const
 
 FrameState::FrameState( const Framebuffer& s_last )
   : str(), cursor_x( 0 ), cursor_y( 0 ), current_rendition( 0 ), current_hyperlink(),
-    cursor_visible( s_last.ds.cursor_visible ), last_frame( s_last )
+    cursor_visible( s_last.ds.cursor_visible ), last_frame( s_last ), kitty_removals(), kitty_additions()
 {
   /* Preallocate for better performance.  Make a guess-- doesn't matter for correctness */
   str.reserve( last_frame.ds.get_width() * last_frame.ds.get_height() * 4 );

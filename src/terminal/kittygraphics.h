@@ -81,13 +81,14 @@ struct ImagePlacement
                   int s_src_y,
                   int s_src_w,
                   int s_src_h )
-    : internal_image_id( s_internal_image_id ), placement_id( s_placement_id ), column( s_column ),
+    : internal_image_id( s_internal_image_id ), placement_id( s_placement_id ), uid( 0 ), column( s_column ),
       columns( s_columns ), rows( s_rows ), z( s_z ), has_src_rect( s_has_src_rect ), src_x( s_src_x ),
       src_y( s_src_y ), src_w( s_src_w ), src_h( s_src_h )
   {}
 
   uint32_t internal_image_id;
   uint32_t placement_id; /* the client's `p=`; 0 means none was given */
+  uint32_t uid;          /* wire-unique id, allocated by Framebuffer::add_placement; never 0 */
   int column;            /* the cursor column at placement time (anchor column) */
   int columns, rows;     /* extent in cells */
   int z;
@@ -96,7 +97,7 @@ struct ImagePlacement
 
   bool operator==( const ImagePlacement& x ) const
   {
-    return ( internal_image_id == x.internal_image_id ) && ( placement_id == x.placement_id )
+    return ( internal_image_id == x.internal_image_id ) && ( placement_id == x.placement_id ) && ( uid == x.uid )
            && ( column == x.column ) && ( columns == x.columns ) && ( rows == x.rows ) && ( z == x.z )
            && ( has_src_rect == x.has_src_rect ) && ( src_x == x.src_x ) && ( src_y == x.src_y )
            && ( src_w == x.src_w ) && ( src_h == x.src_h );

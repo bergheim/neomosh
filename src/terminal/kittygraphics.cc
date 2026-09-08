@@ -596,7 +596,12 @@ bool place_image( Framebuffer* fb, uint32_t internal_id, const Image& image, con
   auto placement = std::make_shared<ImagePlacement>(
     internal_id, cmd.has_p ? cmd.p : 0, orig_col, cols, rows, cmd.z, has_src_rect, cmd.x, cmd.y, cmd.w, cmd.h );
 
-  fb->add_placement( anchor_row, placement );
+  /* On the client (kitty_ids_are_internal), the server already chose this
+     placement's wire-unique id and sent it as p=; use it verbatim instead
+     of minting a new one, so a later a=d,d=i,p= from the server (which
+     targets that same value) finds it. */
+  const uint32_t forced_uid = ( fb->get_kitty_ids_are_internal() && cmd.has_p ) ? cmd.p : 0;
+  fb->add_placement( anchor_row, placement, forced_uid );
 
   if ( !cmd.C ) {
     int final_col = orig_col + cols;
@@ -612,9 +617,14 @@ bool place_image( Framebuffer* fb, uint32_t internal_id, const Image& image, con
 }
 
 /* Resolve the internal id an a=p or a=d,d=i/d=I command targets: by app id
-   (i=) if given, else by image number (I=) through the number map. */
+   (i=) if given, else by image number (I=) through the number map. On the
+   client (kitty_ids_are_internal), i= already *is* the internal id -- the
+   server put it there directly, there is no app-id map to go through. */
 uint32_t resolve_target( const ParsedCommand& cmd, Framebuffer* fb )
 {
+  if ( fb->get_kitty_ids_are_internal() ) {
+    return cmd.has_i ? cmd.i : 0;
+  }
   if ( cmd.has_i ) {
     return fb->image_store_resolve( cmd.i );
   }
@@ -768,8 +778,16 @@ std::string execute_command( ParsedCommand cmd, std::string&& data, Framebuffer*
     case 'q':
       return do_transmit( cmd, std::move( data ), fb, /* store = */ false, /* place = */ false );
     case 'T':
+      /* The client never receives pixels through APC: image bytes arrive as
+         ImageChunk instructions instead, applied directly to the store. */
+      if ( fb->get_kitty_ids_are_internal() ) {
+        return build_reply( cmd, "EPERM:transmit not allowed" );
+      }
       return do_transmit( cmd, std::move( data ), fb, /* store = */ true, /* place = */ true );
     case 't':
+      if ( fb->get_kitty_ids_are_internal() ) {
+        return build_reply( cmd, "EPERM:transmit not allowed" );
+      }
       return do_transmit( cmd, std::move( data ), fb, /* store = */ true, /* place = */ false );
     case 'p':
       return do_place_existing( cmd, fb );

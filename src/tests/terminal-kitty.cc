@@ -34,12 +34,14 @@
    parsing, chunk assembly, replies and q gating, store caps, scroll-off,
    ED, and partial-admission-free Complete equality. */
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <string>
 
 #include "completeterminal.h"
+#include "hostinput.pb.h"
 #include "kittygraphics.h"
 
 using namespace Terminal;
@@ -133,6 +135,42 @@ static std::string minimal_png( uint32_t width, uint32_t height, size_t extra_ga
   p.append( (const char*)h, 4 );
   p.append( extra_garbage, 'x' );
   return p;
+}
+
+/* Send payload as m=1 chunks (6000 raw bytes each, matching the 8192-byte
+   per-APC-command dispatcher cap once base64-encoded) followed by a
+   finalizing m=0 chunk. Returns the final reply. */
+static std::string kitty_chunked_transmit( Complete& term,
+                                           const std::string& first_controls,
+                                           const std::string& payload )
+{
+  const size_t chunk_bytes = 6000;
+  size_t sent = 0;
+  std::string reply;
+  bool first = true;
+  while ( sent < payload.size() ) {
+    size_t take = std::min( chunk_bytes, payload.size() - sent );
+    bool last = ( sent + take == payload.size() );
+    std::string controls = first ? ( first_controls + ",m=1" ) : ( last ? "m=0" : "m=1" );
+    reply = term.act( kitty_apc( controls, base64_encode( payload.substr( sent, take ) ) ) );
+    sent += take;
+    first = false;
+  }
+  return reply;
+}
+
+/* True if a hostbytes-carrying diff (already-parsed HostMessage) contains
+   the given Kitty APC prefix anywhere in its escape string. */
+static bool diff_hostbytes_contains( const HostBuffers::HostMessage& msg, const std::string& needle )
+{
+  for ( int i = 0; i < msg.instruction_size(); i++ ) {
+    if ( msg.instruction( i ).HasExtension( HostBuffers::hostbytes )
+         && msg.instruction( i ).GetExtension( HostBuffers::hostbytes ).hoststring().find( needle )
+              != std::string::npos ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 int main( void )
@@ -710,6 +748,674 @@ int main( void )
     check( found, "a 100-row placement on a 24-row screen anchors at row 0" );
     check( term.get_fb().ds.get_cursor_row() == 23,
            "the scroll amount is clamped to the screen height (cursor ends at the bottom row)" );
+  }
+
+  /* --- Wire: carrying images and placements from a server Complete to a
+     client Complete via diff_from/apply_string, paced in small batches
+     (docs/notes/20260908T153303--kitty-graphics-over-the-state-sync-stream). --- */
+
+  /* A 100 KiB image, admitted in four 32 KiB batches: the first diff carries
+     the placement and the first batch; the client ends up with an image
+     entry with the right metadata, pending until the last diff; after the
+     last diff the client's blob matches the server's byte for byte and its
+     placement matches the server's uid, columns and rows. Also proves
+     diff_from is deterministic for a fixed state pair. */
+  {
+    Complete server( 80, 24 );
+
+    const size_t total_bytes = 100 * 1024;
+    std::string png = minimal_png( 50, 50, total_bytes - 24 );
+    check( png.size() == total_bytes, "wire: fake PNG is exactly 100 KiB" );
+
+    std::string reply = kitty_chunked_transmit( server, "a=T,i=500,f=100", png );
+    check_eq( reply, "\033_Gi=500;OK\033\\", "wire: chunked a=T on the server replies OK" );
+    check( server.get_fb().get_row( 0 )->placements.size() == 1, "wire: server has one placement" );
+    const uint32_t internal_id = server.get_fb().get_row( 0 )->placements[0]->internal_image_id;
+    const uint32_t server_uid = server.get_fb().get_row( 0 )->placements[0]->uid;
+
+    Complete client( 80, 24 );
+    client.set_kitty_ids_are_internal();
+
+    Complete prev( 80, 24 ); /* baseline: what the client currently has -- nothing yet */
+
+    /* Round 1: first 32 KiB batch, plus the placement. */
+    server.admit_image_bytes( 32768 );
+    std::string diff1 = server.diff_from( prev );
+
+    HostBuffers::HostMessage msg1;
+    check( msg1.ParseFromString( diff1 ), "wire: diff1 parses as a HostMessage" );
+    bool found_chunk = false;
+    for ( int i = 0; i < msg1.instruction_size(); i++ ) {
+      if ( msg1.instruction( i ).HasExtension( HostBuffers::imagechunk ) ) {
+        const auto& chunk = msg1.instruction( i ).GetExtension( HostBuffers::imagechunk );
+        check( chunk.image_id() == internal_id, "wire: first diff's chunk is for the placed image" );
+        check( chunk.offset() == 0, "wire: first diff's chunk starts at offset 0" );
+        check( chunk.data().size() == 32768, "wire: first diff's chunk carries exactly the first 32 KiB" );
+        check( chunk.total() == total_bytes, "wire: first diff's chunk states the full 100 KiB total" );
+        found_chunk = true;
+      }
+    }
+    check( found_chunk, "wire: first diff carries an image chunk" );
+    check( diff_hostbytes_contains( msg1, "\033_Ga=p" ), "wire: first diff carries the placement" );
+
+    check_eq( server.diff_from( prev ), diff1, "wire: diff_from is deterministic for the same state pair" );
+
+    client.apply_string( diff1 );
+
+    std::shared_ptr<const Image> client_image = client.get_fb().image_store_get( internal_id );
+    check( client_image != nullptr, "wire: client created an image entry from the first chunk" );
+    if ( client_image ) {
+      check( client_image->format == 100 && client_image->width == 50 && client_image->height == 50,
+             "wire: client's image entry has the server's metadata" );
+      check( !client_image->blob, "wire: client's image entry is still pending after the first batch" );
+    }
+    check( client.get_fb().get_row( 0 )->placements.size() == 1,
+           "wire: client has one placement after the first diff" );
+    if ( client.get_fb().get_row( 0 )->placements.size() == 1 ) {
+      const auto& p = client.get_fb().get_row( 0 )->placements[0];
+      check( p->uid == server_uid && p->internal_image_id == internal_id,
+             "wire: client's placement matches the server's uid and internal id" );
+    }
+
+    prev = server; /* the client is now assumed to have round 1's state */
+
+    /* Rounds 2 and 3: two more 32 KiB batches; still not complete. */
+    for ( int round = 0; round < 2; round++ ) {
+      server.admit_image_bytes( 32768 );
+      std::string diff = server.diff_from( prev );
+      client.apply_string( diff );
+      prev = server;
+    }
+    std::shared_ptr<const Image> client_image_mid = client.get_fb().image_store_get( internal_id );
+    check( client_image_mid && !client_image_mid->blob, "wire: still pending after three 32 KiB batches" );
+
+    /* Round 4: one more 32 KiB budget, but only the remainder is left to
+       admit -- this completes the image. */
+    server.admit_image_bytes( 32768 );
+    std::string diff4 = server.diff_from( prev );
+    client.apply_string( diff4 );
+
+    std::shared_ptr<const Image> server_image = server.get_fb().image_store_get( internal_id );
+    std::shared_ptr<const Image> client_image_final = client.get_fb().image_store_get( internal_id );
+    check( server_image && server_image->blob, "wire: server's image is complete" );
+    check( client_image_final && client_image_final->blob, "wire: client's image is complete after the last diff" );
+    if ( server_image && server_image->blob && client_image_final && client_image_final->blob ) {
+      check( *client_image_final->blob == *server_image->blob,
+             "wire: client's blob matches the server's byte for byte" );
+    }
+
+    check( client.get_fb().get_row( 0 )->placements.size() == 1, "wire: client still has exactly one placement" );
+    if ( client.get_fb().get_row( 0 )->placements.size() == 1
+         && server.get_fb().get_row( 0 )->placements.size() == 1 ) {
+      const auto& cp = client.get_fb().get_row( 0 )->placements[0];
+      const auto& sp = server.get_fb().get_row( 0 )->placements[0];
+      check( cp->uid == sp->uid && cp->columns == sp->columns && cp->rows == sp->rows,
+             "wire: client's placement has the server's uid, columns and rows" );
+    }
+  }
+
+  /* Ordering: a placement must never reach the client before the image
+     entry it names, even with zero bytes admitted -- admission can lag
+     well behind a=T (an earlier image still being paced, or a state simply
+     sent before admission next runs). */
+  {
+    Complete server( 80, 24 );
+    std::string pixels( 12, '\x77' );
+    server.act( kitty_apc( "a=T,i=900,f=24,s=2,v=2", base64_encode( pixels ) ) );
+    check( server.get_fb().get_row( 0 )->placements.size() == 1, "wire ordering: server has a placement" );
+    const uint32_t internal_id = server.get_fb().get_row( 0 )->placements[0]->internal_image_id;
+
+    Complete client( 80, 24 );
+    client.set_kitty_ids_are_internal();
+    Complete prev( 80, 24 );
+
+    /* No admission at all before this diff. */
+    std::string diff1 = server.diff_from( prev );
+    client.apply_string( diff1 );
+
+    std::shared_ptr<const Image> client_image = client.get_fb().image_store_get( internal_id );
+    check( client_image != nullptr, "wire ordering: client created the image entry with zero bytes admitted" );
+    if ( client_image ) {
+      check( client_image->format == 24 && client_image->width == 2 && client_image->height == 2,
+             "wire ordering: the zero-byte entry still carries the server's metadata" );
+      check( !client_image->blob, "wire ordering: the zero-byte entry is pending" );
+    }
+    check( client.get_fb().get_row( 0 )->placements.size() == 1,
+           "wire ordering: the placement is present on the client (not dropped as ENOENT)" );
+
+    prev = server;
+    server.admit_image_bytes( 32768 ); /* covers the whole 12-byte blob */
+    client.apply_string( server.diff_from( prev ) );
+
+    std::shared_ptr<const Image> client_image2 = client.get_fb().image_store_get( internal_id );
+    std::shared_ptr<const Image> server_image = server.get_fb().image_store_get( internal_id );
+    check( client_image2 && client_image2->blob, "wire ordering: second diff completes the blob" );
+    if ( client_image2 && client_image2->blob && server_image && server_image->blob ) {
+      check( *client_image2->blob == *server_image->blob, "wire ordering: completed blob matches the server's" );
+    }
+  }
+
+  /* A chunk whose offset doesn't match what the client already has (data
+     from the network, so this covers an out-of-sync or misbehaving peer,
+     not a real diff_from bug) must be dropped with no state change, not
+     abort the client. Proven indirectly: if the bad chunk were appended
+     anyway, the pending byte count would be wrong and the next (correct)
+     chunk's offset would then also fail to line up, so the image would
+     never complete or would complete with the wrong bytes. */
+  {
+    Framebuffer fb( 80, 24 );
+
+    auto piece1 = std::make_shared<const std::string>( std::string( 5, 'x' ) );
+    fb.kitty_apply_chunk( 910, 0, piece1, 10, 24, 1, 1, false );
+    std::shared_ptr<const Image> pending = fb.image_store_get( 910 );
+    check( pending != nullptr && !pending->blob,
+           "wire tolerant offset: first (correct) chunk leaves the image pending" );
+
+    auto bad_piece = std::make_shared<const std::string>( std::string( 3, 'y' ) );
+    fb.kitty_apply_chunk( 910, 999, bad_piece, 10, 24, 1, 1, false ); /* offset should be 5, not 999 */
+    std::shared_ptr<const Image> still_pending = fb.image_store_get( 910 );
+    check( still_pending != nullptr && !still_pending->blob,
+           "wire tolerant offset: wrong-offset chunk does not complete or corrupt the image" );
+
+    auto piece2 = std::make_shared<const std::string>( std::string( 5, 'z' ) );
+    fb.kitty_apply_chunk( 910, 5, piece2, 10, 24, 1, 1, false ); /* the real next piece, at the real offset */
+    std::shared_ptr<const Image> done = fb.image_store_get( 910 );
+    check( done != nullptr && static_cast<bool>( done->blob ),
+           "wire tolerant offset: the real continuation completes the image" );
+    if ( done && done->blob ) {
+      check(
+        *done->blob == ( std::string( 5, 'x' ) + std::string( 5, 'z' ) ),
+        "wire tolerant offset: the wrong-offset chunk was dropped, final bytes are exactly the two good pieces" );
+    }
+  }
+
+  /* Scroll: once the placement is complete on both sides, line feeds that
+     scroll the server's screen move its row (and placement) with it, via
+     the same shared_ptr<Row> mechanism plain text scrolling already uses --
+     no a=p is re-emitted, and the client's placement row matches. */
+  {
+    Complete server( 80, 24 );
+    /* Distinct text on every row, so the scroll shortcut's row-by-row
+       content match is genuine rather than a coincidental match between two
+       otherwise-untouched blank rows (which all still share one identical
+       "blank row" object and would defeat the shortcut's own row-0 early-out,
+       an unrelated pre-existing limitation this test sidesteps rather than
+       exercises). A real screen has text, so this is the realistic case. */
+    for ( int r = 0; r < 24; r++ ) {
+      server.act( "\033[" + std::to_string( r + 1 ) + ";1H" );
+      server.act( std::string( 1, static_cast<char>( 'A' + ( r % 26 ) ) ) );
+    }
+    server.act( "\033[11;1H" ); /* row index 10, column 0 */
+    std::string pixels( 12, '\x33' );
+    server.act( kitty_apc( "a=T,i=600,f=24,s=2,v=2", base64_encode( pixels ) ) );
+    check( server.get_fb().get_row( 10 )->placements.size() == 1, "wire scroll: placement created at row 10" );
+    const uint32_t internal_id = server.get_fb().get_row( 10 )->placements[0]->internal_image_id;
+    const uint32_t uid = server.get_fb().get_row( 10 )->placements[0]->uid;
+
+    Complete client( 80, 24 );
+    client.set_kitty_ids_are_internal();
+    Complete prev( 80, 24 );
+
+    server.admit_image_bytes( 32768 ); /* covers the whole 12-byte blob in one batch */
+    client.apply_string( server.diff_from( prev ) );
+    prev = server;
+
+    std::shared_ptr<const Image> server_img = server.get_fb().image_store_get( internal_id );
+    std::shared_ptr<const Image> client_img = client.get_fb().image_store_get( internal_id );
+    check( server_img && server_img->blob && client_img && client_img->blob
+             && ( *server_img->blob == *client_img->blob ),
+           "wire scroll: image complete and matching on both sides before scrolling" );
+    check( client.get_fb().get_row( 10 )->placements.size() == 1
+             && client.get_fb().get_row( 10 )->placements[0]->uid == uid,
+           "wire scroll: client's placement lands at row 10 too" );
+
+    server.act( "\033[24;1H" ); /* bottom row */
+    server.act( "\n" );         /* scroll the whole screen up by 1 */
+    check( server.get_fb().get_row( 9 )->placements.size() == 1, "wire scroll: server placement moved to row 9" );
+
+    std::string diff2 = server.diff_from( prev );
+    HostBuffers::HostMessage msg2;
+    check( msg2.ParseFromString( diff2 ), "wire scroll: diff2 parses" );
+    check( !diff_hostbytes_contains( msg2, "\033_Ga=p" ), "wire scroll: the scroll diff contains no a=p" );
+
+    client.apply_string( diff2 );
+    check( client.get_fb().get_row( 9 )->placements.size() == 1
+             && client.get_fb().get_row( 9 )->placements[0]->uid == uid,
+           "wire scroll: client's placement row matches the server's after scrolling" );
+  }
+
+  /* Delete: a=d,d=a on the server produces a diff carrying a=d; the
+     client's placement disappears, but its store keeps the image data,
+     matching the server (which also keeps the data on d=a). */
+  {
+    Complete server( 80, 24 );
+    std::string pixels( 12, '\x44' );
+    server.act( kitty_apc( "a=T,i=700,f=24,s=2,v=2", base64_encode( pixels ) ) );
+    const uint32_t internal_id = server.get_fb().get_row( 0 )->placements[0]->internal_image_id;
+
+    Complete client( 80, 24 );
+    client.set_kitty_ids_are_internal();
+    Complete prev( 80, 24 );
+
+    server.admit_image_bytes( 32768 );
+    client.apply_string( server.diff_from( prev ) );
+    prev = server;
+    check( client.get_fb().get_row( 0 )->placements.size() == 1,
+           "wire delete: client has the placement before delete" );
+
+    server.act( kitty_apc( "a=d,d=a" ) );
+    check( server.get_fb().get_row( 0 )->placements.empty(), "wire delete: server placement gone" );
+
+    std::string diff2 = server.diff_from( prev );
+    HostBuffers::HostMessage msg2;
+    check( msg2.ParseFromString( diff2 ), "wire delete: diff2 parses" );
+    check( diff_hostbytes_contains( msg2, "\033_Ga=d" ), "wire delete: the diff carries a=d" );
+
+    client.apply_string( diff2 );
+    check( client.get_fb().get_row( 0 )->placements.empty(), "wire delete: client's placement is gone" );
+    std::shared_ptr<const Image> client_image = client.get_fb().image_store_get( internal_id );
+    check( client_image != nullptr && static_cast<bool>( client_image->blob ),
+           "wire delete: client's store still has the image data" );
+  }
+
+  /* Re-transmit: the server replacing app id 800 with a new image (a new
+     internal id) results in the client placing the new internal id and
+     dropping the old placement -- exactly one placement, naming the new
+     id, with the new bytes. */
+  {
+    Complete server( 80, 24 );
+    std::string pixels1( 12, '\x11' );
+    server.act( kitty_apc( "a=T,i=800,f=24,s=2,v=2", base64_encode( pixels1 ) ) );
+    const uint32_t internal1 = server.get_fb().get_row( 0 )->placements[0]->internal_image_id;
+
+    Complete client( 80, 24 );
+    client.set_kitty_ids_are_internal();
+    Complete prev( 80, 24 );
+
+    server.admit_image_bytes( 32768 );
+    client.apply_string( server.diff_from( prev ) );
+    prev = server;
+    check( client.get_fb().get_row( 0 )->placements.size() == 1
+             && client.get_fb().get_row( 0 )->placements[0]->internal_image_id == internal1,
+           "wire retransmit: client placed the first image" );
+
+    std::string pixels2( 12, '\x22' );
+    server.act( kitty_apc( "a=T,i=800,f=24,s=2,v=2", base64_encode( pixels2 ) ) );
+    const uint32_t internal2 = server.get_fb().get_row( 0 )->placements[0]->internal_image_id;
+    check( internal2 != internal1, "wire retransmit: server allocated a new internal id" );
+
+    server.admit_image_bytes( 32768 );
+    client.apply_string( server.diff_from( prev ) );
+
+    check( client.get_fb().get_row( 0 )->placements.size() == 1
+             && client.get_fb().get_row( 0 )->placements[0]->internal_image_id == internal2,
+           "wire retransmit: client ends up with only the new internal id placed" );
+    std::shared_ptr<const Image> client_image2 = client.get_fb().image_store_get( internal2 );
+    check( client_image2 && client_image2->blob && ( *client_image2->blob == pixels2 ),
+           "wire retransmit: client's new image data matches" );
+  }
+
+  /* The client's store must not grow without bound: an image the server
+     frees (d=A here) or drops via a same-id re-transmit produces only a=d
+     in hostbytes, which removes the placement but not the client's copy
+     of the pixels. */
+  {
+    Complete server( 80, 24 );
+    const size_t total_bytes = 100000;
+    std::string png = minimal_png( 50, 50, total_bytes - 24 );
+    std::string reply = kitty_chunked_transmit( server, "a=T,i=980,f=100", png );
+    check_eq( reply, "\033_Gi=980;OK\033\\", "wire remove: chunked a=T on the server replies OK" );
+    const uint32_t internal_id = server.get_fb().image_store_resolve( 980 );
+    check( internal_id != 0, "wire remove: image stored on the server" );
+
+    Complete client( 80, 24 );
+    client.set_kitty_ids_are_internal();
+    Complete prev( 80, 24 );
+
+    server.admit_image_bytes( 32768 ); /* partial: well short of total_bytes */
+    client.apply_string( server.diff_from( prev ) );
+    prev = server;
+
+    std::shared_ptr<const Image> client_image = client.get_fb().image_store_get( internal_id );
+    check( client_image != nullptr && !client_image->blob,
+           "wire remove: client has a pending (incomplete) copy before removal" );
+
+    server.act( kitty_apc( "a=d,d=A" ) );
+    check( server.get_fb().image_store_resolve( 980 ) == 0, "wire remove: server's own store forgot the image" );
+
+    std::string diff2 = server.diff_from( prev );
+    HostBuffers::HostMessage msg2;
+    check( msg2.ParseFromString( diff2 ), "wire remove: diff2 parses" );
+    bool found_remove = false;
+    for ( int i = 0; i < msg2.instruction_size(); i++ ) {
+      if ( msg2.instruction( i ).HasExtension( HostBuffers::imagechunk )
+           && msg2.instruction( i ).GetExtension( HostBuffers::imagechunk ).remove()
+           && msg2.instruction( i ).GetExtension( HostBuffers::imagechunk ).image_id() == internal_id ) {
+        found_remove = true;
+      }
+    }
+    check( found_remove, "wire remove: the diff carries a remove instruction for the image" );
+
+    client.apply_string( diff2 );
+    check( client.get_fb().image_store_get( internal_id ) == nullptr,
+           "wire remove: the diff removes the image from the client's store" );
+    check( client.get_fb().get_row( 0 )->placements.empty(), "wire remove: the client's placement is also gone" );
+  }
+
+  /* Direct proof that image_store_forget (what the remove-chunk path
+     calls) drops pending pieces too, not just the image entry: after
+     forgetting a still-assembling id, a chunk at offset 0 for that same id
+     starts a fresh assembly instead of being rejected as misaligned
+     against stale leftover pieces (real ids are never reused; this is a
+     white-box check of the store function itself). */
+  {
+    Framebuffer fb( 80, 24 );
+    auto piece1 = std::make_shared<const std::string>( std::string( 4, 'a' ) );
+    fb.kitty_apply_chunk( 990, 0, piece1, 8, 24, 1, 1, false );
+    check( fb.image_store_get( 990 ) != nullptr, "wire remove: pending entry exists before forget" );
+
+    fb.image_store_forget( 990 );
+    check( fb.image_store_get( 990 ) == nullptr, "wire remove: image_store_forget removes the entry" );
+
+    auto piece2 = std::make_shared<const std::string>( std::string( 4, 'b' ) );
+    fb.kitty_apply_chunk( 990, 0, piece2, 4, 24, 1, 1, false ); /* offset 0: only accepted if pending was cleared */
+    std::shared_ptr<const Image> fresh = fb.image_store_get( 990 );
+    check( fresh != nullptr && fresh->blob && ( *fresh->blob == std::string( 4, 'b' ) ),
+           "wire remove: image_store_forget drops pending pieces too, offset 0 starts fresh" );
+  }
+
+  /* A replacement of the same app id (i=) removes the old internal id from
+     the client's store, not just from the row it was placed on. */
+  {
+    Complete server( 80, 24 );
+    std::string pixels1( 12, '\x33' );
+    server.act( kitty_apc( "a=T,i=985,f=24,s=2,v=2", base64_encode( pixels1 ) ) );
+    const uint32_t internal1 = server.get_fb().image_store_resolve( 985 );
+
+    Complete client( 80, 24 );
+    client.set_kitty_ids_are_internal();
+    Complete prev( 80, 24 );
+
+    server.admit_image_bytes( 32768 );
+    client.apply_string( server.diff_from( prev ) );
+    prev = server;
+    check( client.get_fb().image_store_get( internal1 ) != nullptr,
+           "wire remove: client has the first image before re-transmit" );
+
+    std::string pixels2( 12, '\x44' );
+    server.act( kitty_apc( "a=T,i=985,f=24,s=2,v=2", base64_encode( pixels2 ) ) );
+    const uint32_t internal2 = server.get_fb().image_store_resolve( 985 );
+    check( internal2 != internal1, "wire remove: re-transmit allocates a new internal id" );
+
+    server.admit_image_bytes( 32768 );
+    client.apply_string( server.diff_from( prev ) );
+
+    check( client.get_fb().image_store_get( internal2 ) != nullptr, "wire remove: client has the new image" );
+    check( client.get_fb().image_store_get( internal1 ) == nullptr,
+           "wire remove: re-transmit removes the old internal id from the client's store" );
+  }
+
+  /* Client-side cap defence: a chunk that promises more than the client
+     will ever hold (either cap) is refused outright, before creating any
+     entry -- the client never evicts, unlike the server. */
+  {
+    Framebuffer fb( 80, 24 );
+    Framebuffer::set_kitty_store_cap_for_tests( 100 );
+
+    auto oversized_total = std::make_shared<const std::string>( std::string( 50, 'z' ) );
+    fb.kitty_apply_chunk( 995, 0, oversized_total, 200 /* exceeds the 100-byte store cap */, 24, 1, 1, false );
+    check( fb.image_store_get( 995 ) == nullptr,
+           "wire remove: a chunk whose total exceeds the store cap creates no entry" );
+
+    auto over_per_image_cap = std::make_shared<const std::string>( std::string( 4, 'x' ) );
+    fb.kitty_apply_chunk(
+      996, 0, over_per_image_cap, Kitty::IMAGE_MAX_BYTES + 1, 24, 1, 1, false ); /* exceeds the per-image cap */
+    check( fb.image_store_get( 996 ) == nullptr,
+           "wire remove: a chunk whose total exceeds IMAGE_MAX_BYTES creates no entry" );
+
+    auto within_cap = std::make_shared<const std::string>( std::string( 4, 'a' ) );
+    fb.kitty_apply_chunk( 997, 0, within_cap, 4, 24, 1, 1, false );
+    check( fb.image_store_get( 997 ) != nullptr, "wire remove: a chunk within both caps still creates an entry" );
+
+    Framebuffer::set_kitty_store_cap_for_tests( 32 * 1024 * 1024 ); /* restore the default for later tests */
+  }
+
+  /* RIS must not restart the internal-id or placement-uid counters: the
+     transport keeps older states around that can still name images and
+     placements by id, so restarting at 1 risks a post-RIS image reusing an
+     id the client already has complete -- its chunks would then be ignored
+     as stale. */
+  {
+    Complete server( 80, 24 );
+    std::string pixels1( 12, '\x11' );
+    server.act( kitty_apc( "a=T,i=950,f=24,s=2,v=2", base64_encode( pixels1 ) ) );
+    const uint32_t internal1 = server.get_fb().image_store_resolve( 950 );
+    check( internal1 != 0, "reset identity: first image stored before RIS" );
+
+    Complete client( 80, 24 );
+    client.set_kitty_ids_are_internal();
+    Complete prev( 80, 24 );
+
+    server.admit_image_bytes( 32768 );
+    client.apply_string( server.diff_from( prev ) );
+    prev = server;
+    std::shared_ptr<const Image> client_image1 = client.get_fb().image_store_get( internal1 );
+    check( client_image1 && client_image1->blob, "reset identity: client has the first image complete before RIS" );
+
+    server.act( "\033c" ); /* RIS: full reset */
+    std::string pixels2( 12, '\x22' );
+    server.act( kitty_apc( "a=T,i=950,f=24,s=2,v=2", base64_encode( pixels2 ) ) );
+    const uint32_t internal2 = server.get_fb().image_store_resolve( 950 );
+    check( internal2 != 0 && internal2 != internal1,
+           "reset identity: second image (post-RIS) gets a fresh internal id" );
+
+    server.admit_image_bytes( 32768 );
+    client.apply_string( server.diff_from( prev ) );
+
+    std::shared_ptr<const Image> client_image2 = client.get_fb().image_store_get( internal2 );
+    check( client_image2 && client_image2->blob && ( *client_image2->blob == pixels2 ),
+           "reset identity: client ends up with exactly the second image after the diff" );
+  }
+
+  /* Scroll fallback (shortcut not taken): with every other row left blank,
+     they all still share the one blank-row prototype from construction, so
+     the scroll shortcut's own row-0 early-out gives up before it ever
+     looks for a real scroll match (see the "wire scroll" test above, which
+     prints distinct text on every row precisely to avoid this and exercise
+     the shortcut-taken path instead). put_row's fallback then sees the
+     placement's old row lose it and its new row gain it as two unrelated
+     per-row diffs; batching removals-then-additions at the end of the
+     frame must still net that out to exactly one placement, at the new
+     row -- not zero, which is what a naive per-row emission produced. */
+  {
+    Complete server( 80, 24 );
+    server.act( "\033[11;1H" ); /* row index 10, column 0; every other row blank */
+    std::string pixels( 12, '\x66' );
+    server.act( kitty_apc( "a=T,i=970,f=24,s=2,v=2", base64_encode( pixels ) ) );
+    check( server.get_fb().get_row( 10 )->placements.size() == 1, "scroll fallback: placement created at row 10" );
+    const uint32_t internal_id = server.get_fb().get_row( 10 )->placements[0]->internal_image_id;
+    const uint32_t uid = server.get_fb().get_row( 10 )->placements[0]->uid;
+
+    Complete client( 80, 24 );
+    client.set_kitty_ids_are_internal();
+    Complete prev( 80, 24 );
+
+    server.admit_image_bytes( 32768 );
+    client.apply_string( server.diff_from( prev ) );
+    prev = server;
+    check( client.get_fb().get_row( 10 )->placements.size() == 1,
+           "scroll fallback: client has the placement at row 10 before scrolling" );
+
+    server.act( "\033[24;1H" );
+    server.act( "\n" ); /* scroll the whole (blank) screen up by 1 */
+    check( server.get_fb().get_row( 9 )->placements.size() == 1,
+           "scroll fallback: server placement moved to row 9" );
+
+    client.apply_string( server.diff_from( prev ) );
+
+    int placement_rows_on_client = 0;
+    for ( int r = 0; r < 24; r++ ) {
+      placement_rows_on_client += static_cast<int>( client.get_fb().get_row( r )->placements.size() );
+    }
+    check( placement_rows_on_client == 1, "scroll fallback: exactly one placement survives on the client" );
+    check( client.get_fb().get_row( 9 )->placements.size() == 1
+             && client.get_fb().get_row( 9 )->placements[0]->uid == uid
+             && client.get_fb().get_row( 9 )->placements[0]->internal_image_id == internal_id,
+           "scroll fallback: the surviving placement is at row 9 with the server's uid" );
+  }
+
+  /* A second chunk that disagrees with the total the first chunk locked
+     in is untrusted network input and gets dropped -- the pending image
+     stays at its original total, and a later, correctly-sized
+     continuation still completes it. */
+  {
+    Framebuffer fb( 80, 24 );
+    auto piece1 = std::make_shared<const std::string>( std::string( 4, 'a' ) );
+    fb.kitty_apply_chunk( 1000, 0, piece1, 8, 24, 1, 1, false ); /* total locked in at 8 */
+    check( fb.image_store_get( 1000 ) != nullptr, "item6: first chunk creates the entry" );
+
+    auto piece2 = std::make_shared<const std::string>( std::string( 4, 'b' ) );
+    fb.kitty_apply_chunk( 1000, 4, piece2, 100, 24, 1, 1, false ); /* total disagrees: 100 != 8 */
+    std::shared_ptr<const Image> still_pending = fb.image_store_get( 1000 );
+    check( still_pending != nullptr && !still_pending->blob,
+           "item6: a chunk with a different total than the locked-in one is dropped" );
+
+    auto piece3 = std::make_shared<const std::string>( std::string( 4, 'c' ) );
+    fb.kitty_apply_chunk( 1000, 4, piece3, 8, 24, 1, 1, false ); /* the real continuation, at the locked-in total */
+    std::shared_ptr<const Image> done = fb.image_store_get( 1000 );
+    check( done != nullptr && static_cast<bool>( done->blob ),
+           "item6: after the disagreeing chunk is ignored, the real continuation still completes" );
+    if ( done && done->blob ) {
+      check( *done->blob == ( std::string( 4, 'a' ) + std::string( 4, 'c' ) ),
+             "item6: the completed blob is exactly the two agreeing pieces" );
+    }
+  }
+
+  /* A chunk whose payload would push received past the declared total --
+     whether as the very first chunk or as a continuation -- is dropped
+     rather than accepted and silently truncated or overrun at
+     finalization. */
+  {
+    Framebuffer fb( 80, 24 );
+
+    auto oversized_first = std::make_shared<const std::string>( std::string( 10, 'x' ) );
+    fb.kitty_apply_chunk( 1001, 0, oversized_first, 5 /* smaller than the payload */, 24, 1, 1, false );
+    check( fb.image_store_get( 1001 ) == nullptr,
+           "item6: a first chunk overrunning its own total creates no entry" );
+
+    auto piece1 = std::make_shared<const std::string>( std::string( 4, 'a' ) );
+    fb.kitty_apply_chunk( 1002, 0, piece1, 8, 24, 1, 1, false ); /* total=8, received=4 after this */
+    auto overrun = std::make_shared<const std::string>( std::string( 10, 'z' ) ); /* would push received to 14 */
+    fb.kitty_apply_chunk( 1002, 4, overrun, 8, 24, 1, 1, false );
+    std::shared_ptr<const Image> still_pending = fb.image_store_get( 1002 );
+    check( still_pending != nullptr && !still_pending->blob,
+           "item6: an overrunning continuation is dropped, image stays pending" );
+
+    auto piece2 = std::make_shared<const std::string>( std::string( 4, 'b' ) );
+    fb.kitty_apply_chunk( 1002, 4, piece2, 8, 24, 1, 1, false ); /* the real, correctly-sized continuation */
+    std::shared_ptr<const Image> done = fb.image_store_get( 1002 );
+    check( done != nullptr && done->blob && ( *done->blob == ( std::string( 4, 'a' ) + std::string( 4, 'b' ) ) ),
+           "item6: after the overrun is ignored, the correctly-sized continuation still completes" );
+  }
+
+  /* Pending (still-assembling) images reserve their declared total toward
+     the client's store cap too, not just completed images -- otherwise a
+     flood of first chunks for distinct ids, each under the per-image cap
+     but never completed, could reserve unbounded memory. */
+  {
+    Framebuffer fb( 80, 24 );
+    Framebuffer::set_kitty_store_cap_for_tests( 100 );
+
+    auto piece_a = std::make_shared<const std::string>( std::string( 10, 'a' ) );
+    fb.kitty_apply_chunk( 1010, 0, piece_a, 60, 24, 1, 1, false ); /* reserves 60 of the 100-byte cap */
+    check( fb.image_store_get( 1010 ) != nullptr, "item6: a first pending stub within the cap is created" );
+
+    auto piece_b = std::make_shared<const std::string>( std::string( 10, 'b' ) );
+    fb.kitty_apply_chunk( 1011, 0, piece_b, 60, 24, 1, 1, false ); /* 60 (reserved) + 60 (new) > 100 cap */
+    check( fb.image_store_get( 1011 ) == nullptr,
+           "item6: a second stub whose total would push the sum of reservations past the cap is refused" );
+
+    Framebuffer::set_kitty_store_cap_for_tests( 32 * 1024 * 1024 ); /* restore the default for later tests */
+  }
+
+  /* A thousand empty chunks (offset=0, data="") for the same id must never
+     append a piece: only the first chunk creates the entry, and every
+     later empty chunk (offset still matches, since received never
+     advances) is a legitimate no-op that queues nothing. */
+  {
+    Framebuffer fb( 80, 24 );
+    for ( int i = 0; i < 1000; i++ ) {
+      auto empty_piece = std::make_shared<const std::string>( std::string() );
+      fb.kitty_apply_chunk( 1030, 0, empty_piece, 50, 24, 1, 1, false );
+    }
+    check( fb.image_store_get( 1030 ) != nullptr, "item7: one entry exists after a thousand empty chunks" );
+    if ( fb.image_store_get( 1030 ) ) {
+      check( !fb.image_store_get( 1030 )->blob, "item7: the entry is still pending (0 of 50 bytes received)" );
+    }
+    check( fb.kitty_pending_piece_count( 1030 ) == 0, "item7: zero pieces were appended by the empty chunks" );
+  }
+
+  /* clear_all_placements(true) (a=d,d=A) must not leak kitty_admitted or
+     kitty_pending entries for the store it just cleared -- otherwise those
+     maps grow, entry by entry, across every image a long session ever
+     saw, and get copied into every transport snapshot along with the
+     Framebuffer. A zero-valued admitted entry would be indistinguishable
+     from a properly-absent one through kitty_admitted_bytes's "0 if
+     unknown" default, so this admits a nonzero amount first. */
+  {
+    Framebuffer fb( 80, 24 );
+
+    std::string img( 12, '\x11' );
+    uint32_t internal_id = fb.image_store_put( 0, 24, 2, 2, false, std::make_shared<const std::string>( img ) );
+    fb.kitty_admit_bytes( 4 );
+    check( fb.kitty_admitted_bytes( internal_id ) == 4, "item8: admitted bytes recorded before clearing" );
+
+    auto piece = std::make_shared<const std::string>( std::string( 4, 'a' ) );
+    fb.kitty_apply_chunk( 5000, 0, piece, 8, 24, 1, 1, false );
+    check( fb.kitty_pending_piece_count( 5000 ) == 1, "item8: pending piece queued before clearing" );
+
+    fb.clear_all_placements( true );
+    check( fb.image_store_get( internal_id ) == nullptr, "item8: image gone after clear_all_placements(true)" );
+    check( fb.kitty_admitted_bytes( internal_id ) == 0,
+           "item8: no stale (nonzero) admitted-bytes entry survives clear_all_placements(true)" );
+    check( fb.image_store_get( 5000 ) == nullptr, "item8: pending image entry is gone too" );
+    check( fb.kitty_pending_piece_count( 5000 ) == 0,
+           "item8: the pending map is actually cleared, not just its Image entry" );
+  }
+
+  /* The same, through the real a=d,d=A command on a Complete: after a
+     transmit and partial admission, d=A leaves no stale admitted entry. */
+  {
+    Complete server( 80, 24 );
+    std::string pixels( 12, '\x11' );
+    server.act( kitty_apc( "a=T,i=1040,f=24,s=2,v=2", base64_encode( pixels ) ) );
+    const uint32_t internal_id = server.get_fb().image_store_resolve( 1040 );
+    server.admit_image_bytes( 4 );
+    check( server.get_fb().kitty_admitted_bytes( internal_id ) == 4,
+           "item8: partial admission recorded before d=A" );
+
+    server.act( kitty_apc( "a=d,d=A" ) );
+    check( server.get_fb().image_store_resolve( 1040 ) == 0, "item8: image gone after d=A" );
+    check( server.get_fb().kitty_admitted_bytes( internal_id ) == 0,
+           "item8: a=d,d=A leaves no stale admitted-bytes entry for the forgotten id" );
+  }
+
+  /* d=I (forget one image by id) already routed through image_store_forget,
+     which has dropped the admitted entry since the first commit on this
+     branch; kept here as an explicit regression check alongside d=A's fix. */
+  {
+    Complete server( 80, 24 );
+    std::string pixels( 12, '\x22' );
+    server.act( kitty_apc( "a=T,i=1041,f=24,s=2,v=2", base64_encode( pixels ) ) );
+    const uint32_t internal_id = server.get_fb().image_store_resolve( 1041 );
+    server.admit_image_bytes( 4 );
+    check( server.get_fb().kitty_admitted_bytes( internal_id ) == 4,
+           "item8: partial admission recorded before d=I" );
+
+    server.act( kitty_apc( "a=d,d=I,i=1041" ) );
+    check( server.get_fb().image_store_resolve( 1041 ) == 0, "item8: image gone after d=I" );
+    check( server.get_fb().kitty_admitted_bytes( internal_id ) == 0,
+           "item8: d=I leaves no stale admitted-bytes entry for the forgotten id" );
   }
 
   if ( failures > 0 ) {
