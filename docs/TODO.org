@@ -225,13 +225,16 @@ Transport only; agent forwarding and Kitty graphics are consumers with their own
 :END:
 Depends on the OOB channel task. Take src/agent and the mosh.pl -A plumbing from jdrouhard/mosh c3e826f plus cc4c44e, 1bcac25 and cc1e349 (configure option naming, case-sensitive option parsing). Explicit opt-in only, never default. Document the trust boundary: -A lets any process on the remote host sign with the local agent's keys for the life of the session. Socket cleanup on detach and on server exit. Test: ssh-add -l on the remote after mosh -A lists the local keys, and nothing after plain mosh.
 
-* INPROGRESS Kitty graphics protocol over mosh   :terminal:graphics:protocol:
+* WAITING Kitty graphics protocol over mosh      :terminal:graphics:protocol:
 :PROPERTIES:
 :ID:       20260908T061138Z-3d4d0a
 :CREATED:  [2026-09-08 Tue 06:11]
 :LAST_AGENT: claude/claude-fable-5-1 (xhigh)
 :END:
 :LOGBOOK:
+- State "WAITING"    from "INPROGRESS" [2026-09-08 Tue 20:20] \\
+  Client branch landed on master as 714417c; all four branches are in (fb52200 pixel size, 2d6e859 emulator, 51deb24 wire, 714417c client). Waiting on host verification: build both ends, kitten icat foo.png over neomosh into Ghostty, scroll it off, drop the link and roam, reset. Codex reviewed every branch twice; Grok headless cannot take diffs this size and Gemini has no auth in the container.
+- Session claude/claude-fable-5-1 (xhigh) 6ca74d42-95eb-4c5e-9c57-37f750ceba9e [2026-09-08 Tue 20:20]
 - Note taken on [2026-09-08 Tue 19:16] \\
   Wire branch landed on master as 51deb24: ImageChunk extension, ack-paced 32 KiB admission, WIRE-mode placement emission, client internal-id mode. Two Codex rounds fixed placement-before-entry ordering, peer assert, client store growth, id reuse after RIS, scroll-fallback delete ordering, chunk metadata trust, empty-chunk quadratic cost, bulk-delete leaks. Next: client rendering branch.
 - Note taken on [2026-09-08 Tue 17:51] \\
