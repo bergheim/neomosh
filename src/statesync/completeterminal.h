@@ -87,6 +87,16 @@ public:
   void set_kitty_ids_are_internal( void ) { terminal.set_kitty_ids_are_internal(); }
   size_t admit_image_bytes( size_t budget ) { return terminal.admit_kitty_image_bytes( budget ); }
   bool has_unadmitted_images( void ) const { return terminal.has_unadmitted_kitty_images(); }
+  /* Bytes diff_from may send so far, summed over images. Informational; the
+     server's pacing window uses image_bytes_in_flight_since below, which
+     counts per image. */
+  size_t admitted_image_bytes_total( void ) const { return terminal.kitty_admitted_total(); }
+  /* Image bytes admitted here that `acked` does not have, per image: what a
+     resend from `acked` would carry. Deleted images count for nothing. */
+  size_t image_bytes_in_flight_since( const Complete& acked ) const
+  {
+    return terminal.kitty_admitted_bytes_beyond( acked.terminal );
+  }
 
   /* interface for Network::Transport */
   void subtract( const Complete* ) const {}

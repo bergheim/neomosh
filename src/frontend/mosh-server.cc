@@ -693,12 +693,13 @@ static void serve( int host_fd,
 
   uint64_t last_remote_num = network.get_remote_state_num();
 
-  /* Kitty graphics wire pacing: stop-and-wait, one 32 KiB admission batch
-     per acked state. admit_marker is the state number the next batch will
-     be sent under (see below); admission is allowed again once the sender
-     has heard that number acked. */
-  uint64_t admit_marker = 0;
-  static const size_t kitty_admit_batch = 32768;
+  /* Kitty graphics wire pacing. Image bytes enter the synchronised state in
+     batches, and only while the bytes admitted but not yet acknowledged stay
+     under a window: a lost datagram makes mosh resend the diff from the last
+     acked state, so the window bounds that resend, while several batches in
+     flight keep the throughput near one window per round trip. */
+  static const size_t kitty_admit_batch = 256 * 1024;
+  static const size_t kitty_admit_window = 1024 * 1024;
 
 #ifdef HAVE_UTEMPTER
   bool connected_utmp = false;
@@ -732,7 +733,7 @@ static void serve( int host_fd,
       }
       if ( terminal.has_unadmitted_images() ) {
         /* keep ticking while an image is still being paced out */
-        timeout = std::min( timeout, 50 );
+        timeout = std::min( timeout, 20 );
       }
       /*
        * The server goes completely asleep if it has no remote peer.
@@ -892,14 +893,16 @@ static void serve( int host_fd,
         }
       }
 
-      /* Kitty graphics wire pacing: admit one more batch once the previous
-         one (if any) has been acked. Stop-and-wait keeps a lost batch from
-         costing more than itself. */
-      if ( terminal.has_unadmitted_images() && ( !network.shutdown_in_progress() )
-           && ( network.get_sent_state_acked() >= admit_marker ) ) {
-        terminal.admit_image_bytes( kitty_admit_batch );
-        admit_marker = network.get_sent_state_last() + 1;
-        network.set_current_state( terminal );
+      /* Kitty graphics wire pacing: admit another batch while the bytes in
+         flight (admitted here, not yet in the last acked state) stay under
+         the window, counted per image so a deleted image cannot hide new
+         bytes. */
+      if ( terminal.has_unadmitted_images() && ( !network.shutdown_in_progress() ) ) {
+        const size_t in_flight = terminal.image_bytes_in_flight_since( network.get_sent_state_acked_state() );
+        if ( in_flight < kitty_admit_window ) {
+          terminal.admit_image_bytes( std::min( kitty_admit_batch, kitty_admit_window - in_flight ) );
+          network.set_current_state( terminal );
+        }
       }
 
       /* write user input and terminal writeback to the host */

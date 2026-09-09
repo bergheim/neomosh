@@ -1231,3 +1231,24 @@ bool Cell::compare( const Cell& other ) const
 
   return ret;
 }
+
+size_t Framebuffer::kitty_admitted_total( void ) const
+{
+  size_t total = 0;
+  for ( const auto& kv : kitty_admitted ) {
+    total += kv.second;
+  }
+  return total;
+}
+
+size_t Framebuffer::kitty_admitted_bytes_beyond( const Framebuffer& older ) const
+{
+  size_t total = 0;
+  for ( const auto& kv : kitty_admitted ) {
+    const size_t theirs = older.kitty_admitted_bytes( kv.first );
+    if ( kv.second > theirs ) {
+      total += kv.second - theirs;
+    }
+  }
+  return total;
+}

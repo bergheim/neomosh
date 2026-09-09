@@ -1436,6 +1436,45 @@ int main( void )
            "item8: d=I leaves no stale admitted-bytes entry for the forgotten id" );
   }
 
+  /* admitted_image_bytes_total feeds the server's pacing window: it is the
+     sum of admitted bytes over all images, grows with admit_image_bytes and
+     falls back when an image is freed. */
+  {
+    Complete term( 80, 24 );
+    const std::string pixels( 3000, 'q' );
+    term.act( kitty_apc( "a=T,i=77,f=24,s=100,v=10", base64_encode( pixels ) ) );
+    check( term.admitted_image_bytes_total() == 0, "admitted total starts at 0 after a=T" );
+    check( term.has_unadmitted_images(), "image has unadmitted bytes after a=T" );
+    term.admit_image_bytes( 1000 );
+    check( term.admitted_image_bytes_total() == 1000, "admitted total follows a partial admission" );
+    term.admit_image_bytes( 1 << 20 );
+    check( term.admitted_image_bytes_total() == 3000, "admitted total caps at the image size" );
+    check( !term.has_unadmitted_images(), "nothing left to admit once the image is fully admitted" );
+    term.act( kitty_apc( "a=d,d=I,i=77" ) );
+    check( term.admitted_image_bytes_total() == 0, "admitted total drops when the image is freed" );
+  }
+
+  /* Per-image in-flight accounting for the server's pacing window: a large
+     image present in the acked state and then freed must not cancel out the
+     bytes of a new image that the acked state has never seen (an aggregate
+     subtraction would report 0 in flight and let the window overfill). */
+  {
+    Complete term( 80, 24 );
+    term.act( kitty_apc( "a=T,i=78,f=24,s=100,v=10", base64_encode( std::string( 3000, 'a' ) ) ) );
+    term.admit_image_bytes( 1 << 20 );
+    Complete acked( term ); /* the sender's last acked snapshot: image 78 fully admitted */
+    check( term.image_bytes_in_flight_since( acked ) == 0, "nothing in flight right after the ack" );
+    term.act( kitty_apc( "a=d,d=I,i=78" ) );
+    term.act( kitty_apc( "a=T,i=79,f=24,s=100,v=50", base64_encode( std::string( 15000, 'b' ) ) ) );
+    term.admit_image_bytes( 1000 );
+    check( term.image_bytes_in_flight_since( acked ) == 1000,
+           "a freed acked image does not offset a new image's in-flight bytes" );
+    term.admit_image_bytes( 1 << 20 );
+    check( term.image_bytes_in_flight_since( acked ) == 15000, "in flight grows to the new image's full size" );
+    Complete acked2( term );
+    check( term.image_bytes_in_flight_since( acked2 ) == 0, "and returns to 0 once that state is acked" );
+  }
+
   if ( failures > 0 ) {
     fprintf( stderr, "%d check(s) failed\n", failures );
     return 1;

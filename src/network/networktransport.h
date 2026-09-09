@@ -120,6 +120,7 @@ public:
 
   uint64_t get_sent_state_acked_timestamp( void ) const { return sender.get_sent_state_acked_timestamp(); }
   uint64_t get_sent_state_acked( void ) const { return sender.get_sent_state_acked(); }
+  const MyState& get_sent_state_acked_state( void ) const { return sender.get_sent_state_acked_state(); }
   uint64_t get_sent_state_last( void ) const { return sender.get_sent_state_last(); }
 
   unsigned int send_interval( void ) const { return sender.send_interval(); }

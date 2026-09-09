@@ -626,6 +626,12 @@ public:
   size_t kitty_admit_bytes( size_t budget );
   bool kitty_has_unadmitted_bytes( void ) const;
   size_t kitty_admitted_bytes( uint32_t internal_id ) const; /* 0 if unknown */
+  size_t kitty_admitted_total( void ) const; /* sum over all images: what diff_from has been allowed to send */
+  /* Sum over this state's images of the admitted bytes that `older` lacks for
+     the same internal id (0 when older never saw it): exactly the bytes
+     diff_from would emit against `older`, summed. Images deleted since older
+     contribute nothing, so a freed image can never hide new bytes in flight. */
+  size_t kitty_admitted_bytes_beyond( const Framebuffer& older ) const;
 
   /* Kitty graphics wire pacing (client side). Apply one ImageChunk: the
      first chunk for an unknown id creates the stub entry and locks in its

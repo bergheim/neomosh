@@ -91,6 +91,11 @@ public:
   void set_kitty_ids_are_internal( void ) { fb.set_kitty_ids_are_internal( true ); }
   size_t admit_kitty_image_bytes( size_t budget ) { return fb.kitty_admit_bytes( budget ); }
   bool has_unadmitted_kitty_images( void ) const { return fb.kitty_has_unadmitted_bytes(); }
+  size_t kitty_admitted_total( void ) const { return fb.kitty_admitted_total(); }
+  size_t kitty_admitted_bytes_beyond( const Emulator& older ) const
+  {
+    return fb.kitty_admitted_bytes_beyond( older.fb );
+  }
   void apply_kitty_image_chunk( uint32_t internal_id,
                                 uint64_t offset,
                                 std::shared_ptr<const std::string> data,

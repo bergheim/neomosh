@@ -158,6 +158,7 @@ public:
   bool get_counterparty_shutdown_acknowledged( void ) const { return fragmenter.last_ack_sent() == uint64_t( -1 ); }
   uint64_t get_sent_state_acked_timestamp( void ) const { return sent_states.front().timestamp; }
   uint64_t get_sent_state_acked( void ) const { return sent_states.front().num; }
+  const MyState& get_sent_state_acked_state( void ) const { return sent_states.front().state; }
   uint64_t get_sent_state_last( void ) const { return sent_states.back().num; }
 
   bool shutdown_ack_timed_out( void ) const;
