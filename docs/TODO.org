@@ -232,6 +232,8 @@ Depends on the OOB channel task. Take src/agent and the mosh.pl -A plumbing from
 :LAST_AGENT: claude/claude-fable-5-1 (xhigh)
 :END:
 :LOGBOOK:
+- Note taken on [2026-09-09 Wed 04:17] \\
+  Host test 2026-09-09 (tux client, berghome server, Ghostty): tiny icons rendered, any image over about 6 KB was a blank line. Debug branch debug/kitty-logging with NEOMOSH_KITTY_LOG traced it: the image's a=T never reached the Kitty module because kitten icat sends a whole image as one unchunked APC and the dispatcher discarded any APC over 8192 bytes silently. The icon that looked misplaced was correct: icat centres by default (server and client both recorded column 71 of 147). Everything else (probe, KITTY mode, wire chunks, pacing gate, upload, placement) traced clean. Fix: APC cap derived from IMAGE_MAX_BYTES, per-image cap 16 MiB, store 64 MiB, regression test. Codex: merge.
 - State "WAITING"    from "INPROGRESS" [2026-09-08 Tue 20:20] \\
   Client branch landed on master as 714417c; all four branches are in (fb52200 pixel size, 2d6e859 emulator, 51deb24 wire, 714417c client). Waiting on host verification: build both ends, kitten icat foo.png over neomosh into Ghostty, scroll it off, drop the link and roam, reset. Codex reviewed every branch twice; Grok headless cannot take diffs this size and Gemini has no auth in the container.
 - Session claude/claude-fable-5-1 (xhigh) 6ca74d42-95eb-4c5e-9c57-37f750ceba9e [2026-09-08 Tue 20:20]
@@ -280,5 +282,9 @@ Prerequisite for Kitty graphics and for timg, chafa, yazi and image.nvim: kitten
 :PROPERTIES:
 :ID:       20260908T204405Z-0b4493
 :CREATED:  [2026-09-08 Tue 20:44]
+:END:
+:LOGBOOK:
+- Note taken on [2026-09-09 Wed 04:17] \\
+  From the APC cap fix (2026-09-09): the dispatcher's in-flight APC buffer and the Kitty chunk accumulator are by-value members of the emulator state that mosh snapshots per sent state, so a large in-flight image is copied into snapshots (transient, up to tens of MB); consider a shared buffer excluded from equality, or streaming base64 decode into the accumulator. An APC over the dispatcher cap is discarded silently; parsing the control prefix first would allow an EFBIG reply. The 32 KiB stop-and-wait pacing has now been exercised only by images under one batch; verify multi-batch throughput on the host with a full-window photo and consider a larger batch.
 :END:
 Collected while landing v1 on 2026-09-08; none blocks the host test. Partially visible images: a placement lives on its top row, so an image whose top row scrolls off disappears while kitty keeps drawing the visible part; needs per-row coverage metadata or a row offset in the placement. Unicode placeholders (U=1) for kitten icat inside a remote tmux. Advertise graphics in the capability task once the host test passes. Display scroll shortcut gives up when row 0 trivially self-matches on blank rows, so scrolled placements are re-emitted as delete plus place instead of riding the scroll; correct but costs bytes. a=p from apps with x, y, w, h source rectangles and z ordering are stored and forwarded but untested against a real terminal. Animation frames and the remaining a=d selectors (c, p, q, x, y, z) reply EINVAL or are ignored. Consider a=q replies that echo the assigned i for I= transmits in the client path. Pixel size: CSI 14;2 t (whole window) is ignored on purpose; revisit if a tool needs it.
