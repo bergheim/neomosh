@@ -137,8 +137,8 @@ static std::string minimal_png( uint32_t width, uint32_t height, size_t extra_ga
   return p;
 }
 
-/* Send payload as m=1 chunks (6000 raw bytes each, matching the 8192-byte
-   per-APC-command dispatcher cap once base64-encoded) followed by a
+/* Send payload as m=1 chunks (6000 raw bytes each, comfortably under the
+   per-APC dispatcher cap once base64-encoded) followed by a
    finalizing m=0 chunk. Returns the final reply. */
 static std::string kitty_chunked_transmit( Complete& term,
                                            const std::string& first_controls,
@@ -353,7 +353,7 @@ int main( void )
     std::string chunk_b64 = base64_encode( chunk_raw );
 
     size_t total = 0;
-    const size_t target = 8 * 1024 * 1024 + 1;
+    const size_t target = Kitty::IMAGE_MAX_BYTES + 1;
     bool first = true;
     while ( total < target ) {
       std::string controls = first ? "a=T,i=40,f=24,s=1,v=1,m=1" : "m=1";
@@ -362,15 +362,32 @@ int main( void )
       first = false;
     }
     std::string final_reply = term.act( kitty_apc( "m=0", base64_encode( std::string( 3, 'z' ) ) ) );
-    check_eq( final_reply, "\033_Gi=40;EFBIG\033\\", "an image over 8 MiB replies EFBIG" );
+    check_eq( final_reply, "\033_Gi=40;EFBIG\033\\", "an image over IMAGE_MAX_BYTES replies EFBIG" );
   }
 
-  /* The APC 8192-byte cap discards the whole command silently. */
+  /* Regression: kitten icat sends a whole image as ONE unchunked APC. The
+     dispatcher used to cap every APC at 8192 bytes and discard larger ones
+     silently, which threw away every real image over about 6 KB while tiny
+     icons still worked. A single 30000-byte payload (40000 base64 chars)
+     must now be stored and placed. */
   {
     Complete term( 80, 24 );
-    std::string reply = term.act( kitty_apc( "a=T,i=50,f=24,s=1,v=1", std::string( 8200, 'A' ) ) );
-    check_eq( reply, "", "an APC command over 8192 bytes is discarded silently" );
-    check( term.get_fb().image_store_resolve( 50 ) == 0, "discarded APC command stored nothing" );
+    std::string reply
+      = term.act( kitty_apc( "a=T,i=50,f=24,s=100,v=100", base64_encode( std::string( 30000, 'p' ) ) ) );
+    check_eq( reply, "\033_Gi=50;OK\033\\", "a single unchunked APC well over 8192 bytes replies OK" );
+    check( term.get_fb().image_store_resolve( 50 ) != 0, "the large unchunked image is stored" );
+    check( term.get_fb().get_row( 0 )->placements.size() == 1, "the large unchunked image is placed" );
+  }
+
+  /* The APC cap still exists, sized above the largest acceptable image; an
+     APC over it is discarded silently, so a hostile app cannot grow the
+     dispatcher buffer without bound. */
+  {
+    Complete term( 80, 24 );
+    const size_t over_cap = Kitty::IMAGE_MAX_BYTES / 3 * 4 + 65536 + 1;
+    std::string reply = term.act( kitty_apc( "a=T,i=51,f=24,s=1,v=1", std::string( over_cap, 'A' ) ) );
+    check_eq( reply, "", "an APC command over the dispatcher cap is discarded silently" );
+    check( term.get_fb().image_store_resolve( 51 ) == 0, "discarded APC command stored nothing" );
   }
 
   /* A copy of a Complete equals the original and differs after a placement. */
@@ -384,7 +401,7 @@ int main( void )
 
   /* Fix: the chunk accumulator is capped while accumulating, not only at
      finalize, so a remote app cannot grow it without bound by never sending
-     m=0. Driven directly through Kitty::handle_apc (bypassing the 8192-byte
+     m=0. Driven directly through Kitty::handle_apc (bypassing the
      per-APC-command dispatcher cap, which is a different, unrelated limit)
      so each "chunk" can carry far more than one escape sequence could. */
   {
@@ -393,8 +410,9 @@ int main( void )
     std::string one_mib_b64 = base64_encode( std::string( 1024 * 1024, 'z' ) );
 
     std::string reply;
-    for ( int i = 0; i < 9; i++ ) {
-      bool last = ( i == 8 );
+    const int n_chunks = static_cast<int>( Kitty::IMAGE_MAX_BYTES / ( 1024 * 1024 ) ) + 1; /* one over the cap */
+    for ( int i = 0; i < n_chunks; i++ ) {
+      bool last = ( i == n_chunks - 1 );
       std::string controls = ( i == 0 ) ? "a=T,i=71,f=24,s=1,v=1,m=1" : ( last ? "m=0" : "m=1" );
       reply = Kitty::handle_apc( "G" + controls + ";" + one_mib_b64, &fb, &chunk );
       if ( !last ) {
@@ -462,7 +480,7 @@ int main( void )
               "\033_Gi=82;OK\033\\",
               "ENOSPC: deleting the first placement frees it up for eviction, retry succeeds" );
 
-    Framebuffer::set_kitty_store_cap_for_tests( 32 * 1024 * 1024 ); /* restore the default for later tests */
+    Framebuffer::set_kitty_store_cap_for_tests( 64 * 1024 * 1024 ); /* restore the default for later tests */
   }
 
   /* base64_decode's accumulator must not misbehave (nor, under UBSan, trip
@@ -611,7 +629,7 @@ int main( void )
               "\033_Gi=220;OK\033\\",
               "re-transmitting the same id at full capacity still succeeds" );
 
-    Framebuffer::set_kitty_store_cap_for_tests( 32 * 1024 * 1024 ); /* restore the default for later tests */
+    Framebuffer::set_kitty_store_cap_for_tests( 64 * 1024 * 1024 ); /* restore the default for later tests */
   }
 
   /* I= with no i= allocates a server-side app id from a counter starting at
@@ -1177,7 +1195,7 @@ int main( void )
     fb.kitty_apply_chunk( 997, 0, within_cap, 4, 24, 1, 1, false );
     check( fb.image_store_get( 997 ) != nullptr, "wire remove: a chunk within both caps still creates an entry" );
 
-    Framebuffer::set_kitty_store_cap_for_tests( 32 * 1024 * 1024 ); /* restore the default for later tests */
+    Framebuffer::set_kitty_store_cap_for_tests( 64 * 1024 * 1024 ); /* restore the default for later tests */
   }
 
   /* RIS must not restart the internal-id or placement-uid counters: the
@@ -1335,7 +1353,7 @@ int main( void )
     check( fb.image_store_get( 1011 ) == nullptr,
            "item6: a second stub whose total would push the sum of reservations past the cap is refused" );
 
-    Framebuffer::set_kitty_store_cap_for_tests( 32 * 1024 * 1024 ); /* restore the default for later tests */
+    Framebuffer::set_kitty_store_cap_for_tests( 64 * 1024 * 1024 ); /* restore the default for later tests */
   }
 
   /* A thousand empty chunks (offset=0, data="") for the same id must never

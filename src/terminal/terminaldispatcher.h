@@ -120,7 +120,10 @@ public:
   static const int PARAM_MAX = 65535;
   /* prevent evil escape sequences from causing long loops */
 
-  static const size_t APC_MAXIMUM_SIZE = 8192;
+  /* Large enough for the biggest image the Kitty module accepts, base64
+     encoded (3 bytes become 4) plus room for the control keys. kitten icat
+     sends a whole image as one APC, so this cannot be a small number. */
+  static const size_t APC_MAXIMUM_SIZE = Kitty::IMAGE_MAX_BYTES / 3 * 4 + 65536;
 
   std::string terminal_to_host; /* this is the reply string */
 

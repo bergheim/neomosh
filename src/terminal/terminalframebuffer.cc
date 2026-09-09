@@ -712,7 +712,7 @@ void Framebuffer::prefix_window_title( const title_type& s )
   window_title.insert( window_title.begin(), s.begin(), s.end() );
 }
 
-static const size_t KITTY_DEFAULT_STORE_CAP = 32 * 1024 * 1024;
+static const size_t KITTY_DEFAULT_STORE_CAP = 64 * 1024 * 1024;
 static size_t kitty_store_cap = KITTY_DEFAULT_STORE_CAP;
 
 void Framebuffer::set_kitty_store_cap_for_tests( size_t bytes )

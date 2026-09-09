@@ -106,8 +106,9 @@ struct ImagePlacement
 
 namespace Kitty {
 /* EFBIG cap, per image (applies to a single-shot transmit and to the fully
-   assembled bytes of a chunked one alike). */
-const size_t IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+   assembled bytes of a chunked one alike). Sized for a full-window PNG from
+   kitten icat, which sends the whole image as one unchunked APC. */
+const size_t IMAGE_MAX_BYTES = 16 * 1024 * 1024;
 
 /* Bounds on the store and the placement list, independent of the byte cap:
    a transmit or placement can be small and still be unbounded in count. */
