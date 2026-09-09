@@ -284,6 +284,8 @@ Prerequisite for Kitty graphics and for timg, chafa, yazi and image.nvim: kitten
 :CREATED:  [2026-09-08 Tue 20:44]
 :END:
 :LOGBOOK:
+- Note taken on [2026-09-09 Wed 04:38] \\
+  Pacing follow-up done 2026-09-09: 256 KiB batches under a 1 MiB in-flight window replace 32 KiB stop-and-wait after the host test showed a full-window photo taking many seconds.
 - Note taken on [2026-09-09 Wed 04:17] \\
   From the APC cap fix (2026-09-09): the dispatcher's in-flight APC buffer and the Kitty chunk accumulator are by-value members of the emulator state that mosh snapshots per sent state, so a large in-flight image is copied into snapshots (transient, up to tens of MB); consider a shared buffer excluded from equality, or streaming base64 decode into the accumulator. An APC over the dispatcher cap is discarded silently; parsing the control prefix first would allow an EFBIG reply. The 32 KiB stop-and-wait pacing has now been exercised only by images under one batch; verify multi-batch throughput on the host with a full-window photo and consider a larger batch.
 :END:
