@@ -232,6 +232,8 @@ Depends on the OOB channel task. Take src/agent and the mosh.pl -A plumbing from
 :LAST_AGENT: claude/claude-fable-5-1 (xhigh)
 :END:
 :LOGBOOK:
+- Note taken on [2026-09-09 Wed 05:22] \\
+  Host verification 2026-09-09 (tux Ghostty client, berghome server): after the APC cap fix (4acc5e1) a full-window photo renders over neomosh (screenshot 20260909T063315--mosh-icat in stash/share/screenshots); after the pacing window (bf540ce) the speed is in line with icat over ssh. Still unverified on the host: scroll the image off with yes | head -50, drop the link and roam, reset, and an icon sent right after a photo.
 - Note taken on [2026-09-09 Wed 04:17] \\
   Host test 2026-09-09 (tux client, berghome server, Ghostty): tiny icons rendered, any image over about 6 KB was a blank line. Debug branch debug/kitty-logging with NEOMOSH_KITTY_LOG traced it: the image's a=T never reached the Kitty module because kitten icat sends a whole image as one unchunked APC and the dispatcher discarded any APC over 8192 bytes silently. The icon that looked misplaced was correct: icat centres by default (server and client both recorded column 71 of 147). Everything else (probe, KITTY mode, wire chunks, pacing gate, upload, placement) traced clean. Fix: APC cap derived from IMAGE_MAX_BYTES, per-image cap 16 MiB, store 64 MiB, regression test. Codex: merge.
 - State "WAITING"    from "INPROGRESS" [2026-09-08 Tue 20:20] \\
@@ -284,6 +286,8 @@ Prerequisite for Kitty graphics and for timg, chafa, yazi and image.nvim: kitten
 :CREATED:  [2026-09-08 Tue 20:44]
 :END:
 :LOGBOOK:
+- Note taken on [2026-09-09 Wed 05:22] \\
+  Speed levers left after the window landed (2026-09-09), in increasing effort: adaptive window (grow while no resend, halve on one) plus a 10 ms tick, which raises the 12.8 MB/s ceiling set by 256 KiB per 20 ms pass; stream the last hop by uploading m=1 chunks to the local terminal as they arrive instead of after completion, which hides the base64 tail on big images; selective retransmission via the OOB channel for lossy links. Also: debug/kitty-logging kept as a local branch only (NEOMOSH_KITTY_LOG tracing on both ends), rebase it when the next host debugging round comes.
 - Note taken on [2026-09-09 Wed 04:38] \\
   Pacing follow-up done 2026-09-09: 256 KiB batches under a 1 MiB in-flight window replace 32 KiB stop-and-wait after the host test showed a full-window photo taking many seconds.
 - Note taken on [2026-09-09 Wed 04:17] \\
