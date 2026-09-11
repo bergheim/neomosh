@@ -667,6 +667,15 @@ public:
   bool image_has_placement( uint32_t internal_id ) const;
   bool placement_exists( uint32_t internal_id, uint32_t placement_id ) const;
   size_t placement_count( void ) const;
+  /* Placement cap for a=p/a=T: the framebuffer's own area (width * height),
+     clamped to Kitty::PLACEMENT_CAP_FLOOR/CEILING. A per-cell protocol
+     client legitimately needs one placement per cell, and a placement costs
+     less than the cell it sits on, which the framebuffer has already
+     allocated -- so the screen's area is a safe, self-scaling bound. This
+     gates new placements only; it never prunes placements already present
+     when the terminal shrinks -- those stay until deleted or their row
+     goes away. */
+  size_t placement_cap( void ) const;
   void delete_placements_of_image( uint32_t internal_id );
   void delete_placement_by_id( uint32_t internal_id, uint32_t placement_id );
   void clear_all_placements( bool free_data );

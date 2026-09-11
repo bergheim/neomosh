@@ -597,11 +597,14 @@ bool place_image( Framebuffer* fb, uint32_t internal_id, const Image& image, con
   const int orig_col = fb->ds.get_cursor_col();
 
   /* A nonzero placement id that already exists for this image is replaced,
-     not added to: find and drop it first (from wherever it currently is)
-     so the placement-count check below sees the post-replacement count. */
+     not added to: find and drop it first (from wherever it currently is).
+     A replacement never grows the placement count, so it must go through
+     even if placement_count() already exceeds the cap -- e.g. after the
+     terminal shrinks and lowers placement_cap() while placements from
+     before the shrink stay put (the cap gates new placements only; see
+     its doc comment). Only a genuinely new placement is checked. */
   const bool is_replace = cmd.has_p && ( cmd.p != 0 ) && fb->placement_exists( internal_id, cmd.p );
-  const size_t projected_count = fb->placement_count() + ( is_replace ? 0 : 1 );
-  if ( projected_count > Kitty::MAX_PLACEMENTS ) {
+  if ( !is_replace && ( fb->placement_count() + 1 > fb->placement_cap() ) ) {
     return false;
   }
   if ( is_replace ) {

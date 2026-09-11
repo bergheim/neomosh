@@ -113,7 +113,8 @@ const size_t IMAGE_MAX_BYTES = 16 * 1024 * 1024;
 /* Bounds on the store and the placement list, independent of the byte cap:
    a transmit or placement can be small and still be unbounded in count. */
 const size_t MAX_IMAGES = 256;
-const size_t MAX_PLACEMENTS = 1024;
+const size_t PLACEMENT_CAP_FLOOR = 1024;    /* small terminals keep today's headroom */
+const size_t PLACEMENT_CAP_CEILING = 65536; /* ~6 MB of placements, whatever size is claimed */
 
 /* Accumulator for an in-progress m=1 chunked transmission. Owned by the
    Dispatcher, outside synchronised state -- exactly like the OSC buffer, a

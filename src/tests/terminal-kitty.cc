@@ -581,21 +581,95 @@ int main( void )
               "image count cap: the 257th placed image replies ENOSPC" );
   }
 
-  /* The total placement list is capped at 1024, independent of the image
-     count and byte caps -- repeated a=p must not grow it forever. */
+  /* The total placement list is capped following the screen's own area
+     (80*24 = 1920 here), independent of the image count and byte caps --
+     repeated a=p must not grow it forever. */
   {
     Complete term( 80, 24 );
     term.act( kitty_apc( "a=t,i=200,f=32,s=1,v=1", base64_encode( std::string( 4, 'z' ) ) ) );
-    for ( int p = 1; p <= 1024; p++ ) {
+    for ( int p = 1; p <= 1920; p++ ) {
       std::string ps = std::to_string( p );
       check_eq( term.act( kitty_apc( "a=p,i=200,p=" + ps ) ),
                 "\033_Gi=200,p=" + ps + ";OK\033\\",
                 "placement cap: placement " + ps + " added" );
     }
-    check( term.get_fb().placement_count() == 1024, "placement cap: exactly 1024 placements exist" );
-    check_eq( term.act( kitty_apc( "a=p,i=200,p=1025" ) ),
-              "\033_Gi=200,p=1025;ENOSPC\033\\",
-              "placement cap: the 1025th placement replies ENOSPC" );
+    check( term.get_fb().placement_count() == 1920, "placement cap: exactly 1920 placements exist" );
+    check_eq( term.act( kitty_apc( "a=p,i=200,p=1921" ) ),
+              "\033_Gi=200,p=1921;ENOSPC\033\\",
+              "placement cap: the 1921st placement replies ENOSPC" );
+  }
+
+  /* Cap follows a larger screen: yazi's old-style per-cell Kitty driver
+     (used whenever it cannot identify the terminal brand) emits one a=p per
+     cell of the preview with a source rectangle. At 147x40 the cap is
+     147*40 = 5880, comfortably above the 2774 placements a 73x38 pane
+     wants -- this is the regression that motivated the cap following the
+     screen instead of a flat 1024. */
+  {
+    Complete term( 147, 40 );
+    term.act( kitty_apc( "a=t,i=300,f=32,s=1,v=1", base64_encode( std::string( 4, 'z' ) ) ) );
+    for ( int p = 1; p <= 2774; p++ ) {
+      std::string ps = std::to_string( p );
+      check_eq( term.act( kitty_apc( "a=p,i=300,p=" + ps + ",x=0,y=0,w=1,h=1,c=1,r=1,z=-1,C=1" ) ),
+                "\033_Gi=300,p=" + ps + ";OK\033\\",
+                "yazi per-cell placement: placement " + ps + " added" );
+    }
+    check( term.get_fb().placement_count() == 2774, "yazi per-cell placement: all 2774 placements stored" );
+  }
+
+  /* Floor holds on a tiny screen: 20x5 has area 100, well under
+     PLACEMENT_CAP_FLOOR, so the cap stays at 1024. */
+  {
+    Complete term( 20, 5 );
+    check( term.get_fb().placement_cap() == 1024, "placement cap: floor holds on a tiny screen" );
+  }
+
+  /* Ceiling holds: 300x250 has area 75000, above PLACEMENT_CAP_CEILING, so
+     the cap is clamped to 65536. Assert on the accessor only -- actually
+     emitting that many placements would slow the test for no benefit. */
+  {
+    Complete term( 300, 250 );
+    check( term.get_fb().placement_cap() == 65536, "placement cap: ceiling holds on a huge screen" );
+  }
+
+  /* Exact area in the ordinary case: no flooring or ceiling in play. */
+  {
+    Complete term( 147, 40 );
+    check( term.get_fb().placement_cap() == 5880, "placement cap: exact screen area in the ordinary case" );
+  }
+
+  /* Shrinking the terminal lowers the cap but never prunes existing
+     placements, so placement_count() can end up above the new cap. A
+     replacement of an existing placement id must still be let through in
+     that state (it does not grow the count); only a genuinely new
+     placement id is refused. 50x24 = 1200 is picked for the resized cap so
+     it lands strictly between PLACEMENT_CAP_FLOOR and the 1500 placements
+     already stored -- the point being tested is the cap following the
+     screen down to its own area, not the floor clamp. */
+  {
+    Complete term( 80, 24 );
+    term.act( kitty_apc( "a=t,i=400,f=32,s=1,v=1", base64_encode( std::string( 4, 'z' ) ) ) );
+    for ( int p = 1; p <= 1500; p++ ) {
+      std::string ps = std::to_string( p );
+      check_eq( term.act( kitty_apc( "a=p,i=400,p=" + ps ) ),
+                "\033_Gi=400,p=" + ps + ";OK\033\\",
+                "shrink-then-replace setup: placement " + ps + " added at 80x24" );
+    }
+    check( term.get_fb().placement_count() == 1500, "shrink-then-replace setup: 1500 placements exist" );
+
+    term.act( Parser::Resize( 50, 24 ) );
+    check( term.get_fb().placement_cap() == 1200, "shrink-then-replace: cap follows the screen down to 1200" );
+    check( term.get_fb().placement_count() == 1500,
+           "shrink-then-replace: shrinking does not prune existing placements" );
+
+    check_eq( term.act( kitty_apc( "a=p,i=400,p=1" ) ),
+              "\033_Gi=400,p=1;OK\033\\",
+              "shrink-then-replace: replacing an existing id succeeds despite count over the new cap" );
+    check( term.get_fb().placement_count() == 1500,
+           "shrink-then-replace: replacing an existing id neither grows nor shrinks the list" );
+    check_eq( term.act( kitty_apc( "a=p,i=400,p=1501" ) ),
+              "\033_Gi=400,p=1501;ENOSPC\033\\",
+              "shrink-then-replace: a brand new id is still refused over the new cap" );
   }
 
   /* An a=p (or a=T) with a nonzero p that already exists for that image

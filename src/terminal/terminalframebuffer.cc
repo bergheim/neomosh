@@ -1083,6 +1083,35 @@ size_t Framebuffer::placement_count( void ) const
   return total;
 }
 
+size_t Framebuffer::placement_cap( void ) const
+{
+  /* get_width()/get_height() are int and, for pathological geometry, could
+     be zero or negative; guard that explicitly rather than relying on the
+     constructor's assert, which does not fire in an NDEBUG build and would
+     otherwise let a negative value become a huge one once cast to size_t. */
+  const int int_width = ds.get_width();
+  const int int_height = ds.get_height();
+  if ( ( int_width <= 0 ) || ( int_height <= 0 ) ) {
+    return Kitty::PLACEMENT_CAP_FLOOR;
+  }
+  const size_t width = static_cast<size_t>( int_width );
+  const size_t height = static_cast<size_t>( int_height );
+  /* Divide instead of multiplying to test the ceiling: a sufficiently large
+     claimed geometry can still wrap size_t on a 32-bit platform, so the
+     product is never formed until it's known to fit. If width alone
+     already exceeds ceiling/height, the area provably exceeds the ceiling
+     and the ceiling is returned directly -- so by the time area is formed
+     below, it can only still be under the floor, never over the ceiling. */
+  if ( width > Kitty::PLACEMENT_CAP_CEILING / height ) {
+    return Kitty::PLACEMENT_CAP_CEILING;
+  }
+  const size_t area = width * height;
+  if ( area < Kitty::PLACEMENT_CAP_FLOOR ) {
+    return Kitty::PLACEMENT_CAP_FLOOR;
+  }
+  return area;
+}
+
 void Framebuffer::delete_placements_of_image( uint32_t internal_id )
 {
   for ( size_t r = 0; r < rows.size(); r++ ) {
