@@ -695,11 +695,16 @@ static void serve( int host_fd,
 
   /* Kitty graphics wire pacing. Image bytes enter the synchronised state in
      batches, and only while the bytes admitted but not yet acknowledged stay
-     under a window: a lost datagram makes mosh resend the diff from the last
-     acked state, so the window bounds that resend, while several batches in
-     flight keep the throughput near one window per round trip. */
-  static const size_t kitty_admit_batch = 256 * 1024;
-  static const size_t kitty_admit_window = 1024 * 1024;
+     under a window. Everything unacked lands in one instruction, which
+     send_in_fragments blasts as back-to-back datagrams with MSG_DONTWAIT and
+     no pacing: a 1 MiB window was about 850 datagrams, overflowing the
+     default 212 KB UDP send buffer, and one dropped fragment loses the whole
+     instruction, whose retry is the same burst, so the session hung. 64 KiB
+     is about 55 datagrams, a quarter of that buffer.
+     ponytail: batch == window is stop-and-wait, one window per round trip;
+     raise it only with datagram pacing inside the send loop. */
+  static const size_t kitty_admit_batch = 64 * 1024;
+  static const size_t kitty_admit_window = 64 * 1024;
 
 #ifdef HAVE_UTEMPTER
   bool connected_utmp = false;

@@ -232,6 +232,8 @@ Depends on the OOB channel task. Take src/agent and the mosh.pl -A plumbing from
 :LAST_AGENT: claude/claude-fable-5-1 (xhigh)
 :END:
 :LOGBOOK:
+- Note taken on [2026-09-13 Sun 21:57] \\
+  Host report 2026-09-13: kitten icat sometimes hangs the whole session before anything renders. Root cause is the pacing window, not the terminal: everything admitted but unacked lands in one instruction, send_in_fragments blasts it as back-to-back datagrams with MSG_DONTWAIT and no pacing, a 1 MiB window is about 850 datagrams against a 212 KB default UDP send buffer, one dropped fragment loses the whole instruction, and the retry is the same burst, so it never completes. Fix: batch and window both 64 KiB (about 55 datagrams), back to stop-and-wait at one window per round trip. A larger window needs datagram pacing inside the send loop, which mosh has never had. make check 37 tests, 35 pass, 2 xfail.
 - Note taken on [2026-09-09 Wed 05:22] \\
   Host verification 2026-09-09 (tux Ghostty client, berghome server): after the APC cap fix (4acc5e1) a full-window photo renders over neomosh (screenshot 20260909T063315--mosh-icat in stash/share/screenshots); after the pacing window (bf540ce) the speed is in line with icat over ssh. Still unverified on the host: scroll the image off with yes | head -50, drop the link and roam, reset, and an icon sent right after a photo.
 - Note taken on [2026-09-09 Wed 04:17] \\
