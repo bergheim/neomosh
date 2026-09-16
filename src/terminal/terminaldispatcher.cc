@@ -47,7 +47,7 @@ static const size_t MAXIMUM_CLIPBOARD_SIZE = 16 * 1024;
 Dispatcher::Dispatcher()
   : params(), parsed_params(), parsed( false ), dispatch_chars(), OSC_string(), APC_string(), APC_overflow( false ),
     kitty_chunk(), terminal_to_host(), theme_foreground(), theme_background(), theme_scheme( 0 ),
-    color_scheme_notify( false )
+    color_scheme_notify( false ), graphics_caps( true )
 {}
 
 void Dispatcher::set_theme( const std::string& foreground, const std::string& background, int scheme )
@@ -285,7 +285,11 @@ void Dispatcher::APC_put( const Parser::APC_Put* act )
 void Dispatcher::APC_start( const Parser::APC_Start* act __attribute( ( unused ) ) )
 {
   APC_string.clear();
-  APC_overflow = false;
+  /* With graphics off, take the existing discard path from the first byte
+     rather than buffering a whole image's worth of APC only to drop it at
+     dispatch: APC_put returns immediately while this is set, and
+     APC_dispatch's overflow branch clears it. */
+  APC_overflow = !graphics_caps;
 }
 
 void Dispatcher::APC_dispatch( const Parser::APC_End* act __attribute( ( unused ) ), Framebuffer* fb )

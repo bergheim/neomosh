@@ -85,6 +85,21 @@ static const char* const THEME_COLOR_QUERY = "\033]10;?\033\\\033]11;?\033\\";
    unsupported CSI/OSC query. */
 static const char* const KITTY_PROBE = "\033_Ga=q,t=d,f=24,s=1,v=1,i=31;AAAA\033\\";
 
+/* Ask the local terminal what it can do, as far as we're allowed to ask.
+   Sent from init() and again from resume(), since the terminal on the other
+   end of the tty may be a different one by then. */
+void STMClient::send_capability_probes( void )
+{
+  if ( caps_theme ) {
+    swrite( STDOUT_FILENO, THEME_PROBE );
+  }
+
+  if ( caps_graphics ) {
+    swrite( STDOUT_FILENO, KITTY_PROBE );
+    kitty_probe_awaiting_reply = true;
+  }
+}
+
 void STMClient::resume( void )
 {
   /* Restore termios state */
@@ -95,9 +110,6 @@ void STMClient::resume( void )
 
   /* Put terminal in application-cursor-key mode */
   swrite( STDOUT_FILENO, display.open().c_str() );
-
-  /* Re-arm theme notifications and re-query the current theme */
-  swrite( STDOUT_FILENO, THEME_PROBE );
 
   /* Re-probe Kitty graphics support: resume() also runs after a roam to a
      different local terminal (SIGCONT after a suspend, or simply a fresh
@@ -117,8 +129,10 @@ void STMClient::resume( void )
      genuinely off rather than stuck in a stale KITTY mode, and a positive
      one's full repaint re-uploads from scratch. */
   display.reset_graphics();
-  swrite( STDOUT_FILENO, KITTY_PROBE );
-  kitty_probe_awaiting_reply = true;
+
+  /* Re-arm theme notifications, re-query the current theme, and ask again
+     whether this terminal speaks Kitty graphics. */
+  send_capability_probes();
 
   /* Flag that outer terminal state is unknown */
   repaint_requested = true;
@@ -167,13 +181,7 @@ void STMClient::init( void )
   /* Put terminal in application-cursor-key mode */
   swrite( STDOUT_FILENO, display.open().c_str() );
 
-  /* Ask the local terminal for its light/dark scheme and default colours,
-     and ask it to keep us posted on scheme changes. */
-  swrite( STDOUT_FILENO, THEME_PROBE );
-
-  /* Ask whether the local terminal speaks Kitty graphics; see KITTY_PROBE. */
-  swrite( STDOUT_FILENO, KITTY_PROBE );
-  kitty_probe_awaiting_reply = true;
+  send_capability_probes();
 
   /* Add our name to window title */
   if ( !getenv( "MOSH_TITLE_NOPREFIX" ) ) {
@@ -334,8 +342,7 @@ void STMClient::main_init( void )
   network->set_send_delay( 1 ); /* minimal delay on outgoing keystrokes */
 
   /* tell server the size of the terminal */
-  network->get_current_state().push_back(
-    Parser::Resize( window_size.ws_col, window_size.ws_row, window_size.ws_xpixel, window_size.ws_ypixel ) );
+  network->get_current_state().push_back( resize_event() );
 
   /* be noisy as necessary */
   network->set_verbose( verbose );
@@ -516,14 +523,14 @@ bool STMClient::process_user_input( int fd )
            or someone else's reply) leaves graphics off, silently -- covers
            local tmux and any terminal that doesn't understand this. */
         kitty_probe_awaiting_reply = false;
-        if ( it->text.compare( 0, 7, "i=31;OK" ) == 0 ) {
+        if ( caps_graphics && it->text.compare( 0, 7, "i=31;OK" ) == 0 ) {
           display.set_graphics_mode( Terminal::GraphicsMode::KITTY );
           repaint_requested = true;
         }
         break;
     }
   }
-  if ( !replies.empty() && !net.shutdown_in_progress() ) {
+  if ( caps_theme && !replies.empty() && !net.shutdown_in_progress() ) {
     Parser::Theme current( theme_fg, theme_bg, theme_scheme );
     if ( !( current == last_sent_theme ) ) {
       net.get_current_state().push_back( current );
@@ -552,7 +559,7 @@ bool STMClient::process_resize( void )
   }
 
   /* tell remote emulator */
-  Parser::Resize res( window_size.ws_col, window_size.ws_row, window_size.ws_xpixel, window_size.ws_ypixel );
+  Parser::Resize res( resize_event() );
 
   if ( !network->shutdown_in_progress() ) {
     network->get_current_state().push_back( res );

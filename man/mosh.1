@@ -306,6 +306,28 @@ character.  Control characters are set with the actual ASCII
 control character, not with a printable representation such as "^B".
 
 .TP
+.B MOSH_NO_GRAPHICS
+When set in the local environment,
+.BR mosh-client (1)
+neither probes the local terminal for Kitty graphics support nor reports
+the terminal's pixel size to the server, so remote applications find no
+image capability to use.  When set in the remote environment (see
+.BR mosh-server (1))
+it additionally stops the server answering XTWINOPS window-size queries
+and parsing Kitty graphics commands.  Set it on both sides to present
+exactly the capability surface of upstream mosh.
+
+.TP
+.B MOSH_NO_THEME
+When set,
+.BR mosh-client (1)
+does not ask the local terminal for its light/dark colour scheme or its
+default foreground and background colours, and never forwards them to the
+remote session.  This one is purely client-side: with the client quiet
+there is nothing for the server to report, so it needs no counterpart in
+the remote environment.
+
+.TP
 .B MOSH_PREDICTION_DISPLAY
 Controls local echo as described above.  The command-line flag
 overrides this variable.

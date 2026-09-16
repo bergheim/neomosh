@@ -28,7 +28,7 @@ new
 [\-\- command...]
 .br
 .SH DESCRIPTION
-\fBmosh-server\fP is a helper program for the 
+\fBmosh-server\fP is a helper program for the
 .BR mosh(1)
 remote terminal application.
 
@@ -91,6 +91,18 @@ They may be set by administrators in system login/rc files,
 login/rc files.  \fBmosh-server\fP passes these variables to the login
 session and shell that it starts, but changing them there will have no
 effect.
+
+.TP
+.B MOSH_NO_GRAPHICS
+When set, \fBmosh-server\fP's terminal emulator does not answer XTWINOPS
+window-size queries (CSI 14 t, 16 t and 18 t) and does not parse Kitty
+graphics commands, so applications in the session find no image
+capability to use.  Besides the login/rc mechanisms above, this one can
+be set for a single session from the client, which is useful when
+diagnosing rendering trouble, by passing
+\fB--server="MOSH_NO_GRAPHICS=1 mosh-server"\fP to
+.BR mosh (1).
+The corresponding client-side variable is described there too.
 
 .TP
 .B MOSH_SERVER_NETWORK_TMOUT

@@ -19,15 +19,15 @@
 mosh-client \- client-side helper for mosh
 .SH SYNOPSIS
 MOSH_KEY=KEY
-.B mosh-client 
+.B mosh-client
 [\-v]
 IP PORT
 .br
-.B mosh-client 
+.B mosh-client
 \-c
 .br
 .SH DESCRIPTION
-\fBmosh-client\fP is a helper program for the 
+\fBmosh-client\fP is a helper program for the
 .BR mosh (1)
 remote terminal application.
 
@@ -65,6 +65,17 @@ This variable must be set, and must contain a Base64-encoded cryptographic key f
 .TP
 .B MOSH_ESCAPE_KEY
 See
+.BR mosh (1).
+
+.TP
+.B MOSH_NO_GRAPHICS
+Suppresses the local Kitty graphics probe and pixel-size reporting, as
+described in
+.BR mosh (1).
+
+.TP
+.B MOSH_NO_THEME
+Suppresses the local terminal theme queries, as described in
 .BR mosh (1).
 
 .TP

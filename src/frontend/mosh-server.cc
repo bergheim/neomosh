@@ -431,6 +431,16 @@ static int run_server( const char* desired_ip,
   /* open parser and terminal */
   Terminal::Complete terminal( window_size.ws_col, window_size.ws_row );
 
+  /* Escape hatch: stop the emulator answering XTWINOPS and parsing Kitty
+     graphics APCs, so applications see the same terminal upstream mosh
+     presents. The theme half of the capability surface needs no switch
+     here -- every theme reply is already conditioned on state only the
+     client supplies (MOSH_NO_THEME there), so a client that stays quiet
+     leaves this side inert. */
+  if ( getenv( "MOSH_NO_GRAPHICS" ) ) {
+    terminal.set_graphics_caps( false );
+  }
+
   /* open network */
   Network::UserStream blank;
   using NetworkPointer = std::shared_ptr<ServerConnection>;

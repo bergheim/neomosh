@@ -85,6 +85,10 @@ public:
      loop. Client side: set once, before the first apply_string, so the
      Kitty module resolves ids as internal ids and refuses direct pixels. */
   void set_kitty_ids_are_internal( void ) { terminal.set_kitty_ids_are_internal(); }
+  /* Server side: false stops this terminal answering XTWINOPS and parsing
+     Kitty APCs at all (MOSH_NO_GRAPHICS). Never called on the client, whose
+     Complete must keep interpreting the server's WIRE-mode APCs. */
+  void set_graphics_caps( bool b ) { terminal.set_graphics_caps( b ); }
   size_t admit_image_bytes( size_t budget ) { return terminal.admit_kitty_image_bytes( budget ); }
   bool has_unadmitted_images( void ) const { return terminal.has_unadmitted_kitty_images(); }
   /* Bytes diff_from may send so far, summed over images. Informational; the

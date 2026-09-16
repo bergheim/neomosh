@@ -520,6 +520,14 @@ static Function func_CSI_DSR_Private( CSI, "?n", CSI_DSR_Private );
 /* window operations -- e.g. XTWINOPS pixel/cell/text-area size queries (CSI Ps t) */
 static void CSI_WINOPS( Framebuffer* fb, Dispatcher* dispatch )
 {
+  /* Answering any of these is how an application decides the terminal can
+     carry images, so all three go silent together with MOSH_NO_GRAPHICS --
+     14 and 16 would anyway, since the client stops forwarding pixel size,
+     but 18 has no such dependency and would otherwise still answer. */
+  if ( !dispatch->graphics_caps ) {
+    return;
+  }
+
   /* only the plain single-parameter forms are answered; e.g. "14;2" is ignored */
   if ( dispatch->param_count() != 1 ) {
     return;

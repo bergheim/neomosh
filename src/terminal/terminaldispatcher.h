@@ -134,6 +134,15 @@ public:
   int theme_scheme;
   bool color_scheme_notify; /* DEC private mode 2031 */
 
+  /* Whether to answer graphics-related capability queries (XTWINOPS) and to
+     parse Kitty graphics APCs at all. True everywhere except a server
+     started with MOSH_NO_GRAPHICS set (see mosh-server.cc); a client's own
+     Complete always leaves it true, since that one must keep interpreting
+     the WIRE-mode APCs the server sends it. Deliberately not compared in
+     operator==: per-process configuration, constant for the life of the
+     side that sets it, like the Framebuffer's kitty_ids_are_internal. */
+  bool graphics_caps;
+
   Dispatcher();
   void set_theme( const std::string& foreground, const std::string& background, int scheme );
   int getparam( size_t N, int defaultval );

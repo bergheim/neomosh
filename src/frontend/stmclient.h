@@ -34,6 +34,7 @@
 #define STM_CLIENT_HPP
 
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <string>
 
@@ -92,6 +93,16 @@ private:
      graphics query can be slower than its answer to the theme probe. */
   bool kitty_probe_awaiting_reply;
 
+  /* Escape hatches, read once from the environment at construction:
+     MOSH_NO_THEME and MOSH_NO_GRAPHICS present the local terminal, and
+     through it the remote applications, the same capability surface
+     upstream mosh does. Both halves are client-driven -- every theme reply
+     the server makes is conditioned on a Parser::Theme we sent, and the
+     pixel-size replies on a Resize carrying pixels -- so staying quiet here
+     is enough for theme, and MOSH_NO_GRAPHICS on the server covers the two
+     graphics behaviours that are not (CSI 18 t and APC G parsing). */
+  bool caps_theme, caps_graphics;
+
   /* Outcome of feeding one keystroke byte through the escape-key/quit-sequence
      state machine below. */
   enum class InputAction
@@ -106,6 +117,17 @@ private:
   bool process_user_input( int fd );
   bool process_resize( void );
   InputAction process_input_byte( char the_byte );
+  void send_capability_probes( void );
+  /* The current window size as a Resize event, with the pixel fields zeroed
+     -- i.e. "unknown", exactly what upstream mosh reports -- when graphics
+     are off. */
+  Parser::Resize resize_event( void ) const
+  {
+    return Parser::Resize( window_size.ws_col,
+                           window_size.ws_row,
+                           caps_graphics ? window_size.ws_xpixel : 0,
+                           caps_graphics ? window_size.ws_ypixel : 0 );
+  }
   bool apply_bytes_to_keystroke_stream( const std::string& bytes, bool paste );
 
   void output_new_frame( void );
@@ -131,7 +153,8 @@ public:
       network(), display( true ) /* use TERM environment var to initialize display */, connecting_notification(),
       repaint_requested( false ), lf_entered( false ), quit_sequence_started( false ), clean_shutdown( false ),
       verbose( s_verbose ), reply_filter(), theme_fg(), theme_bg(), theme_scheme( 0 ), last_sent_theme( "", "", 0 ),
-      pending_reply_deadline( 0 ), kitty_probe_awaiting_reply( false )
+      pending_reply_deadline( 0 ), kitty_probe_awaiting_reply( false ),
+      caps_theme( getenv( "MOSH_NO_THEME" ) == NULL ), caps_graphics( getenv( "MOSH_NO_GRAPHICS" ) == NULL )
   {
     if ( predict_mode ) {
       if ( !strcmp( predict_mode, "always" ) ) {

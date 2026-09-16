@@ -88,6 +88,36 @@ int main( void )
     check_eq( term.act( "\033[22t" ), "", "CSI 22 t (unhandled Ps) produces nothing" );
   }
 
+  /* MOSH_NO_GRAPHICS (set_graphics_caps false) silences all three XTWINOPS
+     replies, including 18 t, which has no pixel-size dependency to hide
+     behind, and stops Kitty APCs being parsed at all. */
+  {
+    Complete term( 80, 24 );
+    term.set_graphics_caps( false );
+    term.act( Parser::Resize( 80, 24, 800, 480 ) );
+    check_eq( term.act( "\033[14t" ), "", "CSI 14 t silent with graphics caps off" );
+    check_eq( term.act( "\033[16t" ), "", "CSI 16 t silent with graphics caps off" );
+    check_eq( term.act( "\033[18t" ), "", "CSI 18 t silent with graphics caps off" );
+
+    /* a=T,f=24,s=2,v=2 with 12 payload bytes: accepted and stored when caps
+       are on (see terminal-kitty), dropped without a reply when they're off. */
+    check_eq( term.act( "\033_Ga=T,i=4,f=24,s=2,v=2;AAAAAAAAAAAAAAAA\033\\" ),
+              "",
+              "Kitty transmit APC silent with graphics caps off" );
+    check( term.get_fb().image_store_count() == 0, "Kitty transmit APC stores nothing with graphics caps off" );
+    check( term.get_fb().get_row( 0 )->placements.empty(),
+           "Kitty transmit APC places nothing with graphics caps off" );
+  }
+
+  /* Ordinary text still renders with graphics caps off -- the APC discard path
+     must not swallow anything past the APC's terminator. */
+  {
+    Complete term( 80, 24 );
+    term.set_graphics_caps( false );
+    term.act( "\033_Ga=T,i=4,f=24,s=2,v=2;AAAAAAAAAAAAAAAA\033\\hello" );
+    check( term.get_fb().ds.get_cursor_col() == 5, "text after a discarded APC still reaches the screen" );
+  }
+
   /* A UserStream round trip preserves xpixel/ypixel on a Resize event. */
   {
     UserStream sent;

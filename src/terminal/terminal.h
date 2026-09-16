@@ -89,6 +89,7 @@ public:
 
   /* Kitty graphics wire pacing and chunk assembly (src/statesync/completeterminal.cc). */
   void set_kitty_ids_are_internal( void ) { fb.set_kitty_ids_are_internal( true ); }
+  void set_graphics_caps( bool b ) { dispatch.graphics_caps = b; }
   size_t admit_kitty_image_bytes( size_t budget ) { return fb.kitty_admit_bytes( budget ); }
   bool has_unadmitted_kitty_images( void ) const { return fb.kitty_has_unadmitted_bytes(); }
   size_t kitty_admitted_total( void ) const { return fb.kitty_admitted_total(); }
