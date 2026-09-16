@@ -316,3 +316,19 @@ CLOSED: [2026-09-11 Fri 09:00]
 - Session claude/claude-opus-5 (xhigh) 3844dad3-3e0f-4f1d-a050-3994778306fd [2026-09-11 Fri 08:26]
 :END:
 The Kitty placement cap is a flat 1024 placements for the whole framebuffer (Kitty::MAX_PLACEMENTS), refused with an ENOSPC reply that q=2 suppresses. Per-cell drivers spend one placement per cell: yazi's old-style Kitty driver, which is what yazi picks whenever it cannot identify the terminal brand, emits one a=p per cell of the preview with a source rectangle. Measured at 147x40 a 49x37 portrait preview wants 1813 placements and silently loses its bottom 43 percent. Fix: derive the cap from the framebuffer's own area rather than a constant, clamped to a floor so small terminals keep today's headroom and a ceiling so an absurd claimed size cannot be used to allocate without bound. A placement is far smaller than the cells the same size already forces the framebuffer to allocate, so screen area is a safe bound.
+
+* DONE Feature flags to disable theme and graphics capability advertising :terminal:graphics:theme:
+CLOSED: [2026-09-16 Wed 08:50]
+:PROPERTIES:
+:ID:       20260916T063258Z-062c82
+:CREATED:  [2026-09-16 Wed 08:32]
+:LAST_AGENT: unknown
+:END:
+:LOGBOOK:
+- State "DONE"       from "INPROGRESS" [2026-09-16 Wed 08:50] \\
+  Landed on master as 67c7920. MOSH_NO_THEME is client-only (the server's theme replies are all conditioned on a Parser::Theme the client sends, so a quiet client leaves that side inert); MOSH_NO_GRAPHICS exists on both sides, the client half stopping the Kitty probe and pixel-size forwarding, the server half silencing CSI 18 t and APC G dispatch, which are the only two graphics behaviours with no client dependency. With graphics off APC_start takes the existing overflow-discard path from the first byte, so a stray image APC is never buffered. Verified three ways: the seven new checks in terminal-winops all fail with either gate removed, deliberately; mosh-client under a pty emits the theme probe, the Kitty probe, both or neither, matching the two variables independently; make check 37 tests, 35 pass, 2 expected failures, unchanged from baseline. To bisect a rendering artifact, run MOSH_NO_THEME=1 MOSH_NO_GRAPHICS=1 mosh --server='MOSH_NO_GRAPHICS=1 mosh-server' host and compare against a normal session. Note for future builds in this container: the protobuf and abseil dev headers are no longer installed, so configure and make fail until they are restored.
+- Session unknown [2026-09-16 Wed 08:50]
+- State "INPROGRESS" from "TODO"       [2026-09-16 Wed 08:49]
+- Session unknown [2026-09-16 Wed 08:49]
+:END:
+Neomosh advertises capabilities upstream mosh never did: theme propagation (OSC 10/11, CSI ?996n, mode 2031) and graphics (Kitty probe, pixel window size, XTWINOPS, APC G parsing). Apps and tmux change what they emit when they see these, so a user hitting rendering artifacts has no way to tell whether the fork caused them, and no escape hatch. Add MOSH_NO_THEME and MOSH_NO_GRAPHICS. Client side covers most of it for free: the server theme replies are already self-gated on client-supplied state (theme_scheme, valid_theme_colour) and the pixel replies on ds.get_xpixel() > 0. Server side needs its own gate only for CSI 18 t and APC G dispatch, plumbed like set_kitty_ids_are_internal so the client Complete keeps parsing WIRE-mode APCs regardless.
